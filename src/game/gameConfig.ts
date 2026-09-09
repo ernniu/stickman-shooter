@@ -104,10 +104,10 @@ export const RUNWAY = {
 /** 击杀血渍残留：跟随跑道滚动并淡出，结束后自动销毁。 */
 export const KILL_STAIN = {
   color: 0x7f1d1d,
-  alpha: 0.32,
-  minRadius: gameUnits(46),
-  maxRadius: gameUnits(72),
-  fadeMs: 2000,
+  alpha: 0.16,
+  minRadius: gameUnits(34),
+  maxRadius: gameUnits(52),
+  fadeMs: 900,
   scrollSpeed: RUNWAY.scrollSpeed,
 } as const;
 

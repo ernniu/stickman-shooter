@@ -590,9 +590,14 @@ export class GameScene extends Phaser.Scene {
     const hpText = enemy.getData('hpText') as
       | Phaser.GameObjects.Text
       | undefined;
+    const shadow = enemy.getData('shadow') as
+      | Phaser.GameObjects.Ellipse
+      | undefined;
     this.tweens.killTweensOf(enemy);
     enemy.destroy();
     hpText?.destroy();
+    // 敌人被消灭时其脚下投影必须一并销毁，否则会永久残留成灰色椭圆阴影
+    shadow?.destroy();
     this.score += ENEMY.score;
     this.updateHud();
     this.fx.deathBurst(x, y);
