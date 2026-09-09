@@ -22,7 +22,8 @@ export const PLAYER = {
 
 export const BULLET = {
   speed: gameUnits(2600),
-  size: gameUnits(24),
+  // 弹体尺寸（宽 = size，高 = size × 2，含尾焰）；碰撞体同步按此缩放
+  size: gameUnits(36),
   fireIntervalMs: 300,
 } as const;
 

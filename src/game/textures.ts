@@ -2,13 +2,7 @@ import Phaser from 'phaser';
 
 import { RUNWAY } from '@/game/gameConfig';
 import { getLaneBoundsAtY } from './perspective';
-import {
-  GAME_CENTER_X,
-  GAME_CENTER_Y,
-  GAME_HEIGHT,
-  GAME_WIDTH,
-  gameUnits,
-} from '@/rendering';
+import { GAME_HEIGHT, GAME_WIDTH, gameUnits } from '@/rendering';
 
 export const TEX = {
   player: 'tex-stickman-player',
@@ -203,13 +197,7 @@ export const ensureGameTextures = (scene: Phaser.Scene): void => {
     ctx.fillRect(0, 0, 256, 256);
   });
 
-  ensureCanvasTexture(scene, TEX.vignette, 512, 512, (ctx) => {
-    const gradient = ctx.createRadialGradient(256, 256, 140, 256, 256, 320);
-    gradient.addColorStop(0, 'rgba(10, 22, 44, 0)');
-    gradient.addColorStop(1, 'rgba(10, 22, 44, 0.4)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 512, 512);
-  });
+
 };
 
 /**
@@ -256,7 +244,7 @@ export const registerRunAnimations = (scene: Phaser.Scene): void => {
   }
 };
 
-/** 全屏背景：蓝天渐变 + 太阳光晕 + 远景云海 + 四角暗角，全部程序化绘制。 */
+/** 全屏背景：蓝天渐变 + 太阳光晕（程序化绘制）。 */
 export const addSkyBackground = (scene: Phaser.Scene): void => {
   scene.add
     .image(0, 0, TEX.sky)
@@ -269,53 +257,6 @@ export const addSkyBackground = (scene: Phaser.Scene): void => {
     .setDisplaySize(GAME_WIDTH * 0.6, GAME_WIDTH * 0.6)
     .setDepth(-9.9)
     .setAlpha(0.6);
-
-  // 远景云海：两层静态波浪剪影，垫在跑道之后
-  const sea = scene.add.graphics().setDepth(-9.8);
-  const waveLayer = (
-    yBase: number,
-    amplitude: number,
-    wavelength: number,
-    band: number,
-    color: number,
-    alpha: number,
-  ): void => {
-    sea.fillStyle(color, alpha);
-    sea.beginPath();
-    sea.moveTo(0, yBase + band);
-    sea.lineTo(0, yBase);
-    for (let x = 0; x <= GAME_WIDTH; x += 24) {
-      sea.lineTo(
-        x,
-        yBase + Math.sin((x / wavelength) * Math.PI * 2) * amplitude,
-      );
-    }
-    sea.lineTo(GAME_WIDTH, yBase);
-    sea.lineTo(GAME_WIDTH, yBase + band);
-    sea.closePath();
-    sea.fillPath();
-  };
-  waveLayer(
-    GAME_HEIGHT * 0.09,
-    gameUnits(70),
-    gameUnits(900),
-    GAME_HEIGHT * 0.22,
-    0xffffff,
-    0.4,
-  );
-  waveLayer(
-    GAME_HEIGHT * 0.13,
-    gameUnits(90),
-    gameUnits(1300),
-    GAME_HEIGHT * 0.24,
-    0xdbeeff,
-    0.5,
-  );
-
-  scene.add
-    .image(GAME_CENTER_X, GAME_CENTER_Y, TEX.vignette)
-    .setDisplaySize(GAME_WIDTH, GAME_HEIGHT)
-    .setDepth(-3);
 };
 
 export const createCloud = (
