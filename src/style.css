@@ -1,0 +1,45 @@
+:root {
+  color-scheme: dark;
+  font-family: Arial, sans-serif;
+  background: #000;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#game {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #000;
+  /* 移动端：禁止页面滚动/回弹、双击缩放、拖拽页面与长按选中 */
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 固定 body，避免 iOS 地址栏收缩/橡皮筋回弹导致的页面位移 */
+body {
+  position: fixed;
+  inset: 0;
+}
+
+#game {
+  min-width: 0;
+  min-height: 0;
+}
+
+#game canvas {
+  display: block;
+  image-rendering: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}

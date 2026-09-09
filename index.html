@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>云端火柴人射击</title>
+  </head>
+  <body>
+    <main id="game" aria-label="Phaser game canvas"></main>
+    <script>
+      // 移动端兜底：禁止双指缩放、双击缩放与长按菜单，避免打断游戏操作。
+      ['gesturestart', 'gesturechange', 'gestureend'].forEach((type) => {
+        document.addEventListener(type, (event) => event.preventDefault(), {
+          passive: false,
+        });
+      });
+      document.addEventListener(
+        'dblclick',
+        (event) => event.preventDefault(),
+        { passive: false },
+      );
+      document.addEventListener('contextmenu', (event) =>
+        event.preventDefault(),
+      );
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

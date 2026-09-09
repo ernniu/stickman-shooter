@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "id": "coze-game-loading",
+  "type": "image_sequence",
+  "properties": {
+    "fps": 12.0,
+    "frame_count": 24
+  },
+  "name": "Coze Game Loading",
+  "sources": []
+}

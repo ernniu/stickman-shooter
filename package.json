@@ -1,0 +1,30 @@
+{
+  "name": "phaser-game-afe9b76d4851",
+  "version": "1.0.0",
+  "description": "Phaser 3 game with Vite and TypeScript",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash ./scripts/preinstall-guard.sh build && pnpm typecheck && vite build",
+    "dev": "bash ./scripts/preinstall-guard.sh dev && vite",
+    "preinstall": "bash ./scripts/preinstall-guard.sh",
+    "preview": "bash ./scripts/preinstall-guard.sh start && vite preview",
+    "start": "bash ./scripts/preinstall-guard.sh start && vite preview",
+    "typecheck": "bash ./scripts/preinstall-guard.sh validate && tsc --noEmit",
+    "validate": "bash ./scripts/preinstall-guard.sh validate && node ./scripts/check-image-sizing.mjs && pnpm typecheck"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/serve-static": "^2.2.0",
+    "serve-static": "^2.2.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "pnpm": ">=9.0.0"
+  }
+}

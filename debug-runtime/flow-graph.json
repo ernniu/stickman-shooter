@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "graphs": [
+    {
+      "id": "main",
+      "label": "游戏主流程",
+      "nodes": [
+        {
+          "id": "menu",
+          "label": "开始菜单",
+          "runtime_state": "menu",
+          "tone": "neutral",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "id": "game",
+          "label": "游戏进行",
+          "runtime_state": "game",
+          "tone": "danger",
+          "input_schema": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        {
+          "id": "game-over",
+          "label": "结算画面",
+          "runtime_state": "game-over",
+          "tone": "neutral",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "score": {
+                "type": "integer",
+                "title": "最终分数",
+                "default": 0,
+                "minimum": 0,
+                "maximum": 999999
+              },
+              "wave": {
+                "type": "integer",
+                "title": "到达波次",
+                "default": 1,
+                "minimum": 1,
+                "maximum": 9999
+              }
+            }
+          }
+        }
+      ],
+      "transitions": [
+        { "from": "menu", "to": "game", "event": "点击开始游戏" },
+        { "from": "game", "to": "game-over", "event": "单局结束" },
+        { "from": "game-over", "to": "game", "event": "再来一局" },
+        { "from": "game-over", "to": "menu", "event": "返回菜单" }
+      ]
+    }
+  ]
+}

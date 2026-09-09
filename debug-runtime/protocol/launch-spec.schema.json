@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Game Debug LaunchSpec",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "target"],
+  "properties": {
+    "protocol_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graph_id", "node_id"],
+      "properties": {
+        "graph_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "node_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "default": {},
+      "additionalProperties": {
+        "type": ["integer", "boolean", "string"]
+      }
+    }
+  }
+}

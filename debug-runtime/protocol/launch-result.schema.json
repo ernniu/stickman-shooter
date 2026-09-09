@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Game Debug LaunchResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok", "graph_id", "node_id"],
+  "properties": {
+    "ok": {"type": "boolean"},
+    "graph_id": {"type": "string"},
+    "node_id": {"type": "string"},
+    "runtime_state": {"type": "string"},
+    "applied_input": {"type": "object"},
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "error_code": {"type": "string"},
+    "error": {"type": "string"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"ok": {"const": true}},
+        "required": ["ok"]
+      },
+      "then": {
+        "required": ["runtime_state", "applied_input", "warnings"]
+      },
+      "else": {
+        "required": ["error_code", "error"]
+      }
+    }
+  ]
+}

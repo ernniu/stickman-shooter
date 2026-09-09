@@ -1,0 +1,17 @@
+[project]
+requires = ["nodejs-24"]
+project_id = "7682980487010369576"
+app_id = "7683008066257911848"
+project_name = "云端火柴人射击"
+project_type = "game"
+game_type = "phaser"
+port = 27839
+
+[dev]
+build = ["bash", "./scripts/prepare.sh"]
+run = ["bash", "./scripts/dev.sh"]
+validate = ["bash", "./scripts/validate.sh"]
+
+[deploy]
+build = ["bash", "./scripts/build.sh"]
+run = ["bash", "./scripts/start.sh"]
