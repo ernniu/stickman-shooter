@@ -1,38 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Start Vercel build..."
+echo "===== Vercel build start ====="
+echo "Current dir:"
+pwd
 
-# 执行项目原本的构建脚本
+echo "Run original build script..."
 bash ./scripts/build.sh
 
 echo "Original build completed."
 
-# 删除项目根目录旧 dist
-rm -rf ./dist
+echo "Find app dist index.html:"
+find /tmp/coze-phaser-runtime -type f -path "*/dist/index.html" -print || true
 
-# 查找 Coze/Phaser runtime 里的 dist 目录
-DIST_DIR="$(find /tmp/coze-phaser-runtime -type d -path "*/linux-x64-abi*/dist" | head -n 1 || true)"
+INDEX_FILE="$(find /tmp/coze-phaser-runtime -type f -path "*/dist/index.html" | head -n 1 || true)"
 
-# 如果没找到，再宽松查找一次
-if [ -z "$DIST_DIR" ]; then
-  DIST_DIR="$(find /tmp/coze-phaser-runtime -type d -name "dist" | head -n 1 || true)"
-fi
-
-# 如果还是没找到，打印目录结构并报错
-if [ -z "$DIST_DIR" ]; then
-  echo "ERROR: dist directory not found in /tmp/coze-phaser-runtime"
-  echo "Directory list:"
-  find /tmp/coze-phaser-runtime -maxdepth 5 -type d || true
+if [ -z "$INDEX_FILE" ]; then
+  echo "ERROR: app dist/index.html not found."
+  echo "List possible dist directories:"
+  find /tmp/coze-phaser-runtime -type d -name "dist" -print || true
   exit 1
 fi
 
-echo "Found dist directory: $DIST_DIR"
+DIST_DIR="$(dirname "$INDEX_FILE")"
 
-# 复制 dist 到 Vercel 项目根目录
+echo "Found app dist directory: $DIST_DIR"
+
+rm -rf ./dist
 cp -R "$DIST_DIR" ./dist
 
-echo "Copied dist to project root:"
+echo "Copied app dist to project root:"
 ls -la ./dist
 
-echo "Vercel build finished successfully."
+echo "Check index.html:"
+test -f ./dist/index.html
+
+echo "===== Vercel build finished successfully ====="
