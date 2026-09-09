@@ -3,9 +3,11 @@ import Phaser from 'phaser';
 import {
   getAssetLabelFromFileKey,
   getImageSequenceRuntimeKeys,
+  isOptionalAssetKey,
   loadAssets,
   loadImageSequenceManifests,
   markEditable,
+  queueOptionalImages,
   registerImageSequenceAnimations,
 } from '@/utils';
 import {
@@ -107,7 +109,9 @@ export class BootScene extends Phaser.Scene {
       return;
     }
 
-    const queuedFileCount = loadAssets(this, GAME_ASSETS);
+    // 可选素材一并排队：缺失不阻塞流程，只回退到程序化纹理
+    const queuedFileCount =
+      loadAssets(this, GAME_ASSETS) + queueOptionalImages(this);
     if (queuedFileCount === 0) {
       this.finishLoading();
       return;
@@ -181,6 +185,11 @@ export class BootScene extends Phaser.Scene {
   };
 
   private readonly onLoadError = (file: LoaderFileLike): void => {
+    if (isOptionalAssetKey(file.key)) {
+      // 可选素材缺失：静默忽略，游戏继续使用程序化纹理
+      console.info(`[可选素材] 未找到，使用程序化纹理: ${file.key}`);
+      return;
+    }
     this.loadFailed = true;
     const assetLabel = getAssetLabelFromFileKey(file.key, GAME_ASSETS);
     const details = [

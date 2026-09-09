@@ -5,21 +5,31 @@ import {
   DANGER_LINE_Y,
   ENEMY,
   FEEDBACK,
-  HUD,
   PLAYER,
   PLAYER_Y,
   POWER_UP,
-  RUNWAY_MARGIN_X,
+  RUNWAY,
   enemyCountForWave,
+  enemyHpForWave,
   enemySpeedForWave,
 } from '@/game/gameConfig';
+import { FxSystem } from '@/game/FxSystem';
+import { HudController } from '@/game/HudController';
+import { RunwayRenderer } from '@/game/RunwayRenderer';
+import {
+  getDepthAtY,
+  getLaneBoundsAtY,
+  getPerspectiveScaleAtY,
+} from '@/game/perspective';
 import {
   CloudField,
+  COIN_TEXTURE_SIZE,
   TEX,
   addSkyBackground,
   drawDangerLine,
-  drawRunway,
   ensureGameTextures,
+  registerRunAnimations,
+  resolveTexture,
 } from '@/game/textures';
 import { FONT_FAMILY, floatText } from '@/game/ui';
 import { markEditable } from '@/utils';
@@ -34,22 +44,11 @@ import {
 
 type GameState = 'ready' | 'playing' | 'over';
 
-interface ShotPattern {
-  dx: number;
-  vx: number;
-}
-
-const SHOT_PATTERNS: Record<number, readonly ShotPattern[]> = {
-  1: [{ dx: 0, vx: 0 }],
-  2: [
-    { dx: -BULLET.spreadOffset, vx: 0 },
-    { dx: BULLET.spreadOffset, vx: 0 },
-  ],
-  3: [
-    { dx: 0, vx: 0 },
-    { dx: -BULLET.spreadOffset, vx: -BULLET.speed * BULLET.spreadAngle },
-    { dx: BULLET.spreadOffset, vx: BULLET.speed * BULLET.spreadAngle },
-  ],
+/** 编队阵型：玩家本体是中心成员，跟随成员的横向偏移按编队人数展开。 */
+const FOLLOWER_DX: Record<number, readonly number[]> = {
+  1: [],
+  2: [PLAYER.squadSpread],
+  3: [-PLAYER.squadSpread, PLAYER.squadSpread],
 };
 
 export class GameScene extends Phaser.Scene {
@@ -57,12 +56,13 @@ export class GameScene extends Phaser.Scene {
   private bullets!: Phaser.Physics.Arcade.Group;
   private enemies!: Phaser.Physics.Arcade.Group;
   private powerUps!: Phaser.Physics.Arcade.Group;
-  private scoreText!: Phaser.GameObjects.Text;
-  private waveText!: Phaser.GameObjects.Text;
-  private weaponText!: Phaser.GameObjects.Text;
   private banner!: Phaser.GameObjects.Text;
+  private playerShadow?: Phaser.GameObjects.Ellipse;
   private cloudField?: CloudField;
-  private runwayDashes!: Phaser.GameObjects.Graphics;
+  // 子系统：只负责表现与编排，玩法状态仍由 GameScene 持有
+  private readonly hud = new HudController(this);
+  private readonly fx = new FxSystem(this);
+  private readonly runway = new RunwayRenderer(this);
   private keys: Partial<
     Record<'LEFT' | 'RIGHT' | 'A' | 'D', Phaser.Input.Keyboard.Key>
   > = {};
@@ -72,13 +72,11 @@ export class GameScene extends Phaser.Scene {
   private gameOverTimer?: Phaser.Time.TimerEvent;
   private state: GameState = 'playing';
   private score = 0;
+  private coins = 0;
   private wave = 1;
   private weaponLevel = 1;
   private waveTotal = 0;
   private spawnedThisWave = 0;
-  private runwayOffset = 0;
-  private laneLeft = 0;
-  private laneRight = 0;
   // 手指拖动：只跟踪第一根手指；dragOffsetX 记录按下瞬间玩家与手指的相对偏移。
   private pointerId: number | null = null;
   private dragOffsetX = 0;
@@ -95,11 +93,11 @@ export class GameScene extends Phaser.Scene {
     // 从产品默认值初始化全部实例字段，不依赖上一次的实例状态或 launch data。
     this.state = 'ready';
     this.score = 0;
+    this.coins = 0;
     this.wave = 1;
     this.weaponLevel = 1;
     this.waveTotal = 0;
     this.spawnedThisWave = 0;
-    this.runwayOffset = 0;
     this.fireTimer = undefined;
     this.spawnTimer = undefined;
     this.nextWaveTimer = undefined;
@@ -107,6 +105,7 @@ export class GameScene extends Phaser.Scene {
     this.pointerId = null;
     this.dragOffsetX = 0;
     this.targetX = GAME_CENTER_X;
+    this.squadFollowers = [];
     this.readyLayer = [];
     // 结算页“再来一局”会带 skipIntro，跳过开局提示直接开战。
     this.skipIntro = data?.skipIntro === true;
@@ -114,18 +113,17 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     ensureGameTextures(this);
+    registerRunAnimations(this);
     addSkyBackground(this);
     this.cloudField = new CloudField(this, 5);
 
-    const lane = drawRunway(this, RUNWAY_MARGIN_X);
-    this.laneLeft = lane.laneLeft;
-    this.laneRight = lane.laneRight;
-    drawDangerLine(this, DANGER_LINE_Y, this.laneLeft, this.laneRight);
-    this.runwayDashes = this.add.graphics().setDepth(-7);
+    const lane = this.runway.create();
+    drawDangerLine(this, DANGER_LINE_Y, lane.laneLeft, lane.laneRight);
 
     this.buildPhysicsObjects();
     this.targetX = this.player.x;
-    this.buildHud();
+    this.hud.create();
+    this.buildBanner();
     this.bindInput();
     this.bindShutdown();
 
@@ -249,16 +247,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildPhysicsObjects(): void {
+    const playerTexture = resolveTexture(this, 'player', TEX.player);
     this.player = this.physics.add
-      .sprite(GAME_CENTER_X, PLAYER_Y, TEX.player)
+      .sprite(GAME_CENTER_X, PLAYER_Y, playerTexture)
       .setDisplaySize(PLAYER.width, PLAYER.height)
-      .setDepth(5);
-    (this.player.body as Phaser.Physics.Arcade.Body).setSize(
-      PLAYER.width * 0.72,
-      PLAYER.height * 0.9,
-      true,
-    );
+      .setDepth(getDepthAtY(PLAYER_Y));
+    this.setBodySize(this.player, PLAYER.width * 0.72, PLAYER.height * 0.9);
     this.player.setImmovable(true);
+    // 自定义素材为单帧，不播放程序化跑步动画
+    if (playerTexture === TEX.player) {
+      this.player.play('player-run');
+    }
+    this.playerShadow = this.createShadow(
+      PLAYER.width * 0.95,
+      getDepthAtY(PLAYER_Y) - 0.05,
+    );
+    this.playerShadow.setPosition(GAME_CENTER_X, PLAYER_Y + PLAYER.height * 0.44);
     markEditable('game.player', this.player, { label: '玩家火柴人' });
 
     this.bullets = this.physics.add.group();
@@ -288,41 +292,8 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  private buildHud(): void {
-    const hudStyle: Phaser.Types.GameObjects.Text.TextStyle = {
-      fontFamily: FONT_FAMILY,
-      fontSize: gamePixels(HUD.fontSize),
-      color: '#ffffff',
-      fontStyle: 'bold',
-    };
-    this.scoreText = addGameText(this, HUD.marginX, HUD.y, '分数 0', hudStyle)
-      .setOrigin(0, 0.5)
-      .setStroke('#0f172a', gameUnits(8))
-      .setDepth(10);
-    markEditable('game.hud-score', this.scoreText, { label: '分数显示' });
-    this.waveText = addGameText(
-      this,
-      GAME_WIDTH - HUD.marginX,
-      HUD.y,
-      '波次 1',
-      hudStyle,
-    )
-      .setOrigin(1, 0.5)
-      .setStroke('#0f172a', gameUnits(8))
-      .setDepth(10);
-    markEditable('game.hud-wave', this.waveText, { label: '波次显示' });
-    this.weaponText = addGameText(
-      this,
-      GAME_CENTER_X,
-      HUD.y,
-      '武器 Lv.1',
-      hudStyle,
-    )
-      .setOrigin(0.5)
-      .setStroke('#0f172a', gameUnits(8))
-      .setDepth(10);
-    markEditable('game.hud-weapon', this.weaponText, { label: '武器等级显示' });
-
+  /** 波次 / 清空横幅（流程提示，仍由 GameScene 编排）。 */
+  private buildBanner(): void {
     this.banner = addGameText(this, GAME_CENTER_X, GAME_HEIGHT * 0.38, '', {
       fontFamily: FONT_FAMILY,
       fontSize: gamePixels(110),
@@ -357,14 +328,20 @@ export class GameScene extends Phaser.Scene {
     }
     this.pointerId = pointer.id;
     this.dragOffsetX = this.player.x - pointer.worldX;
-    this.targetX = this.clampToLane(pointer.worldX + this.dragOffsetX);
+    this.targetX = this.clampToLane(
+      pointer.worldX + this.dragOffsetX,
+      this.player.y,
+    );
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
     if (this.pointerId !== pointer.id) {
       return;
     }
-    this.targetX = this.clampToLane(pointer.worldX + this.dragOffsetX);
+    this.targetX = this.clampToLane(
+      pointer.worldX + this.dragOffsetX,
+      this.player.y,
+    );
   }
 
   private onPointerUp(pointer: Phaser.Input.Pointer): void {
@@ -414,46 +391,88 @@ export class GameScene extends Phaser.Scene {
     if (this.state !== 'playing') {
       return;
     }
-    const margin = RUNWAY_MARGIN_X + ENEMY.width * 0.4;
-    const spawnX = Phaser.Math.Between(margin, GAME_WIDTH - margin);
+    // 生成范围取该 y 深度处的透视跑道（顶部较窄），不再使用固定左右边界。
+    const spawnBounds = getLaneBoundsAtY(ENEMY.spawnTopY);
+    const margin = RUNWAY.perspectiveInset + ENEMY.width * 0.4;
+    const spawnX = Phaser.Math.Between(
+      spawnBounds.left + margin,
+      spawnBounds.right - margin,
+    );
+    const enemyTexture = resolveTexture(this, 'enemy', TEX.enemy);
     const enemy = this.enemies.create(
       spawnX,
       ENEMY.spawnTopY,
-      TEX.enemy,
+      enemyTexture,
     ) as Phaser.Physics.Arcade.Sprite;
     enemy
       .setDisplaySize(ENEMY.width, ENEMY.height)
-      .setDepth(4);
-    (enemy.body as Phaser.Physics.Arcade.Body).setSize(
+      .setDepth(getDepthAtY(ENEMY.spawnTopY));
+    // 记录基准缩放，透视缩放 = baseScale × getPerspectiveScaleAtY(y)
+    enemy.setData('baseScale', enemy.scaleX);
+    this.setBodySize(
+      enemy,
       ENEMY.width * ENEMY.bodyWidthRatio,
       ENEMY.height * ENEMY.bodyHeightRatio,
-      true,
     );
     enemy.setVelocityY(enemySpeedForWave(this.wave));
+    // 自定义素材为单帧，不播放程序化跑步动画
+    if (enemyTexture === TEX.enemy) {
+      enemy.play('enemy-run');
+    }
+    const shadow = this.createShadow(
+      ENEMY.width * 0.95,
+      getDepthAtY(ENEMY.spawnTopY) - 0.05,
+    );
+    shadow.setPosition(spawnX, ENEMY.spawnTopY + ENEMY.height * 0.44);
+    enemy.setData('shadow', shadow);
+
+    // 头顶血量数字：跟随敌人下落，受击时逐发扣减。
+    const hp = enemyHpForWave(this.wave);
+    enemy.setData('hp', hp);
+    const hpText = addGameText(
+      this,
+      spawnX,
+      ENEMY.spawnTopY - ENEMY.height * ENEMY.hpTextOffsetRatio,
+      String(hp),
+      {
+        fontFamily: FONT_FAMILY,
+        fontSize: gamePixels(ENEMY.hpFontSize),
+        color: '#ffffff',
+        fontStyle: 'bold',
+      },
+    )
+      .setOrigin(0.5)
+      .setStroke('#7f1d1d', gameUnits(6))
+      .setDepth(getDepthAtY(ENEMY.spawnTopY) + 0.1);
+    enemy.setData('hpText', hpText);
+
     this.spawnedThisWave += 1;
   }
 
   private spawnPowerUp(): void {
     const margin = POWER_UP.size;
+    const spawnY = -POWER_UP.size;
+    const spawnBounds = getLaneBoundsAtY(spawnY);
     const spawnX = Phaser.Math.Between(
-      this.laneLeft + margin,
-      this.laneRight - margin,
+      spawnBounds.left + margin,
+      spawnBounds.right - margin,
     );
+    const powerUpTexture = resolveTexture(this, 'powerUp', TEX.powerUp);
     const powerUp = this.powerUps.create(
       spawnX,
-      -POWER_UP.size,
-      TEX.powerUp,
+      spawnY,
+      powerUpTexture,
     ) as Phaser.Physics.Arcade.Sprite;
-    powerUp.setDisplaySize(POWER_UP.size, POWER_UP.size).setDepth(3);
-    (powerUp.body as Phaser.Physics.Arcade.Body).setSize(
-      POWER_UP.size,
-      POWER_UP.size,
-      true,
-    );
+    powerUp
+      .setDisplaySize(POWER_UP.size, POWER_UP.size)
+      .setDepth(getDepthAtY(spawnY));
+    powerUp.setData('baseScale', powerUp.scale);
+    this.setBodySize(powerUp, POWER_UP.size, POWER_UP.size);
     powerUp.setVelocityY(POWER_UP.speed);
+    // 呼吸改为 alpha 呼吸：缩放交给透视控制，避免 tween 与每帧缩放互相覆盖
     this.tweens.add({
       targets: powerUp,
-      scale: powerUp.scale * 1.08,
+      alpha: 0.72,
       duration: 520,
       yoyo: true,
       repeat: -1,
@@ -465,23 +484,32 @@ export class GameScene extends Phaser.Scene {
     if (this.state !== 'playing') {
       return;
     }
-    const pattern =
-      SHOT_PATTERNS[Phaser.Math.Clamp(this.weaponLevel, 1, 3)] ??
-      SHOT_PATTERNS[1];
-    const muzzleY = this.player.y - PLAYER.height * 0.52;
-    for (const shot of pattern) {
+    const muzzleOffsetY = PLAYER.height * 0.52;
+    for (const member of [this.player, ...this.squadFollowers]) {
+      if (!member.active) {
+        continue;
+      }
+      const bulletTexture = resolveTexture(this, 'bullet', TEX.bullet);
       const bullet = this.bullets.create(
-        this.player.x + shot.dx,
-        muzzleY,
-        TEX.bullet,
+        member.x,
+        member.y - muzzleOffsetY,
+        bulletTexture,
       ) as Phaser.Physics.Arcade.Sprite;
-      bullet.setDisplaySize(BULLET.size, BULLET.size).setDepth(6);
-      (bullet.body as Phaser.Physics.Arcade.Body).setSize(
-        BULLET.size,
-        BULLET.size,
-        true,
-      );
-      bullet.setVelocity(shot.vx, -BULLET.speed);
+      bullet
+        .setDisplaySize(BULLET.size, BULLET.size * 2)
+        .setDepth(getDepthAtY(member.y - muzzleOffsetY) + 0.6);
+      if (bulletTexture === TEX.bullet) {
+        // 程序化纹理：上半弹头、下半尾焰，碰撞体只取弹头区域
+        (bullet.body as Phaser.Physics.Arcade.Body).setSize(
+          BULLET.size,
+          BULLET.size,
+          false,
+        );
+      } else {
+        // 自定义素材：整图居中作为碰撞体
+        this.setBodySize(bullet, BULLET.size, BULLET.size);
+      }
+      bullet.setVelocity(0, -BULLET.speed);
     }
   }
 
@@ -506,11 +534,40 @@ export class GameScene extends Phaser.Scene {
     this.hitEnemy(enemy);
   }
 
-  /** 受击反馈：闪白 + 轻微放大，敌人短暂停顿后销毁并播放爆炸。 */
+  /** 受击：扣 1 点血。非致命只闪白继续下落；致命则停顿、放大后爆炸销毁。 */
   private hitEnemy(enemy: Phaser.Physics.Arcade.Sprite): void {
+    const hp = (enemy.getData('hp') as number) - 1;
+    enemy.setData('hp', hp);
+    const hpText = enemy.getData('hpText') as
+      | Phaser.GameObjects.Text
+      | undefined;
+
+    if (hp > 0) {
+      // 非致命：短促闪白，不打断下落
+      enemy.setTintFill(0xffffff);
+      this.time.delayedCall(Math.round(FEEDBACK.hitFlashMs * 0.75), () => {
+        if (enemy.active) {
+          enemy.clearTint();
+        }
+      });
+      if (hpText?.active) {
+        hpText.setText(String(hp));
+        this.tweens.add({
+          targets: hpText,
+          scale: ENEMY.hpPopScale,
+          duration: 70,
+          yoyo: true,
+          ease: 'Quad.out',
+        });
+      }
+      return;
+    }
+
+    // 致命：走原受击-爆炸流程
     enemy.setData('dying', true);
     enemy.setVelocityY(0);
     enemy.setTintFill(0xffffff);
+    hpText?.setText('0');
     this.tweens.add({
       targets: enemy,
       scaleX: enemy.scaleX * FEEDBACK.hitScale,
@@ -528,58 +585,19 @@ export class GameScene extends Phaser.Scene {
   private killEnemy(enemy: Phaser.Physics.Arcade.Sprite): void {
     const x = enemy.x;
     const y = enemy.y;
+    const hpText = enemy.getData('hpText') as
+      | Phaser.GameObjects.Text
+      | undefined;
     this.tweens.killTweensOf(enemy);
     enemy.destroy();
+    hpText?.destroy();
     this.score += ENEMY.score;
     this.updateHud();
-    this.spawnDeathBurst(x, y);
+    this.fx.deathBurst(x, y);
+    this.fx.killStain(x, y);
+    this.spawnCoins(x, y);
     floatText(this, x, y - gameUnits(80), `+${ENEMY.score}`, '#fff8dc');
     this.checkWaveCleared();
-  }
-
-  private spawnDeathBurst(x: number, y: number): void {
-    // 中心闪光：快速膨胀淡出
-    const flash = this.add
-      .circle(x, y, gameUnits(46), 0xffffff, 0.95)
-      .setDepth(7);
-    this.tweens.add({
-      targets: flash,
-      scale: 1.7,
-      alpha: 0,
-      duration: FEEDBACK.explosionDurationMs * 0.6,
-      ease: 'Quad.out',
-      onComplete: () => flash.destroy(),
-    });
-
-    // 扩散圆环
-    const ring = this.add.circle(x, y, gameUnits(30), 0xffffff, 0.9).setDepth(7);
-    this.tweens.add({
-      targets: ring,
-      scale: 2.6,
-      alpha: 0,
-      duration: FEEDBACK.explosionDurationMs,
-      ease: 'Cubic.out',
-      onComplete: () => ring.destroy(),
-    });
-
-    // 固定数量碎片向外飞散（无持续发射器，全部结束后自动销毁）
-    for (let index = 0; index < FEEDBACK.explosionShards; index += 1) {
-      const angle =
-        (Math.PI * 2 * index) / FEEDBACK.explosionShards + Math.random() * 0.6;
-      const distance = FEEDBACK.explosionRadius * (0.6 + Math.random() * 0.6);
-      const shard = this.add
-        .circle(x, y, gameUnits(9 + Math.random() * 8), 0xe5484d, 0.95)
-        .setDepth(7);
-      this.tweens.add({
-        targets: shard,
-        x: x + Math.cos(angle) * distance,
-        y: y + Math.sin(angle) * distance,
-        alpha: 0,
-        duration: FEEDBACK.explosionDurationMs * (0.8 + Math.random() * 0.4),
-        ease: 'Cubic.out',
-        onComplete: () => shard.destroy(),
-      });
-    }
   }
 
   private checkWaveCleared(): void {
@@ -621,12 +639,14 @@ export class GameScene extends Phaser.Scene {
 
     if (this.weaponLevel < POWER_UP.maxWeaponLevel) {
       this.weaponLevel += 1;
+      this.syncSquad();
       floatText(
         this,
         this.player.x,
         this.player.y - PLAYER.height * 0.9,
-        '武器升级！',
+        '编队扩大！',
         '#ede9fe',
+        { pop: true },
       );
       this.player.setTint(0xa78bfa);
       this.time.delayedCall(180, () => {
@@ -665,11 +685,17 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     const deltaSeconds = delta / 1000;
     this.cloudField?.update(deltaSeconds);
-    this.updateRunwayDashes(deltaSeconds);
+    this.runway.updateDashes(deltaSeconds);
     if (this.state !== 'playing') {
       return;
     }
     this.handleMovement(deltaSeconds);
+    this.playerShadow?.setPosition(
+      this.player.x,
+      this.player.y + PLAYER.height * 0.44,
+    );
+    this.updateSquadFormation(deltaSeconds);
+    this.syncPerspective();
     this.checkDangerLine();
     this.cullOffscreenObjects();
   }
@@ -683,6 +709,7 @@ export class GameScene extends Phaser.Scene {
       if (direction !== 0) {
         this.targetX = this.clampToLane(
           this.player.x + direction * PLAYER.moveSpeed * deltaSeconds,
+          this.player.y,
         );
       }
     }
@@ -700,17 +727,118 @@ export class GameScene extends Phaser.Scene {
     const smoothing = 1 - Math.exp(-PLAYER.followLerp * deltaSeconds);
     const maxStep = PLAYER.moveSpeed * deltaSeconds;
     const step = Phaser.Math.Clamp(distance * smoothing, -maxStep, maxStep);
-    this.player.x = this.clampToLane(this.player.x + step);
+    this.player.x = this.clampToLane(this.player.x + step, this.player.y);
   }
 
-  /** 把玩家约束在云端跑道内，两侧各留出半个身位避免压线。 */
-  private clampToLane(x: number): number {
+  /** 把角色约束在该 y 深度处的透视跑道内，两侧各留出半个身位避免压线。 */
+  private clampToLane(x: number, y: number): number {
+    const bounds = getLaneBoundsAtY(y);
     const halfWidth = PLAYER.width * PLAYER.halfWidthRatio;
     return Phaser.Math.Clamp(
       x,
-      this.laneLeft + halfWidth,
-      this.laneRight - halfWidth,
+      bounds.left + halfWidth,
+      bounds.right - halfWidth,
     );
+  }
+
+  /** 角色脚下椭圆投影：压在跑道色块上，让角色"站得住"。 */
+  private createShadow(
+    width: number,
+    depth: number,
+  ): Phaser.GameObjects.Ellipse {
+    return this.add
+      .ellipse(0, 0, width, width * 0.3, 0x10253a, 0.28)
+      .setDepth(depth);
+  }
+
+  /**
+   * 设置碰撞体：把目标实际尺寸换算回源纹理空间，
+   * 保证"实际碰撞尺寸"不随素材分辨率变化（程序化纹理下行为完全不变）。
+   */
+  private setBodySize(
+    sprite: Phaser.Physics.Arcade.Sprite,
+    width: number,
+    height: number,
+  ): void {
+    const body = sprite.body as Phaser.Physics.Arcade.Body;
+    const scaleX = sprite.scaleX || 1;
+    const scaleY = sprite.scaleY || 1;
+    body.setSize(width / scaleX, height / scaleY, true);
+  }
+
+  /** 按当前编队等级补建跟随成员（等级只升不降，无需销毁逻辑）。 */
+  private syncSquad(): void {
+    const level = Phaser.Math.Clamp(
+      this.weaponLevel,
+      1,
+      POWER_UP.maxWeaponLevel,
+    );
+    const dxs = FOLLOWER_DX[level] ?? [];
+    while (this.squadFollowers.length < dxs.length) {
+      const index = this.squadFollowers.length;
+      const followerTexture = resolveTexture(this, 'player', TEX.player);
+      const follower = this.physics.add
+        .sprite(
+          this.player.x + dxs[index],
+          PLAYER_Y + PLAYER.squadYOffset,
+          followerTexture,
+        )
+        .setDisplaySize(PLAYER.width, PLAYER.height)
+        .setDepth(getDepthAtY(PLAYER_Y + PLAYER.squadYOffset));
+      this.setBodySize(follower, PLAYER.width * 0.72, PLAYER.height * 0.9);
+      follower.setImmovable(true);
+      // 自定义素材为单帧，不播放程序化跑步动画
+      if (followerTexture === TEX.player) {
+        follower.play('player-run');
+      }
+      const shadow = this.createShadow(
+        PLAYER.width * 0.95,
+        getDepthAtY(PLAYER_Y + PLAYER.squadYOffset) - 0.05,
+      );
+      shadow.setPosition(follower.x, follower.y + PLAYER.height * 0.44);
+      follower.setData('shadow', shadow);
+      markEditable(`game.squad-member-${index + 1}`, follower, {
+        label: '编队成员',
+      });
+      this.squadFollowers.push(follower);
+      // 跟随成员与本体同等承伤、同等拾取。
+      this.physics.add.overlap(
+        follower,
+        this.enemies,
+        this.onPlayerTouchedByEnemy,
+        undefined,
+        this,
+      );
+      this.physics.add.overlap(
+        follower,
+        this.powerUps,
+        this.onPowerUpPickup,
+        undefined,
+        this,
+      );
+    }
+  }
+
+  /** 跟随成员平滑贴向阵位（略滞后于本体，形成编队弹性）。 */
+  private updateSquadFormation(deltaSeconds: number): void {
+    const level = Phaser.Math.Clamp(
+      this.weaponLevel,
+      1,
+      POWER_UP.maxWeaponLevel,
+    );
+    const dxs = FOLLOWER_DX[level] ?? [];
+    const smoothing = 1 - Math.exp(-PLAYER.squadLerp * deltaSeconds);
+    this.squadFollowers.forEach((follower, index) => {
+      const targetX = this.clampToLane(
+        this.player.x + (dxs[index] ?? 0),
+        follower.y,
+      );
+      follower.x += (targetX - follower.x) * smoothing;
+      const shadow = follower.getData('shadow') as
+        | Phaser.GameObjects.Ellipse
+        | undefined;
+      shadow?.setPosition(follower.x, follower.y + PLAYER.height * 0.44);
+    });
   }
 
   private checkDangerLine(): void {
@@ -744,21 +872,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private updateRunwayDashes(deltaSeconds: number): void {
-    const spacing = gameUnits(360);
-    this.runwayOffset =
-      (this.runwayOffset + gameUnits(560) * deltaSeconds) % spacing;
-    const graphics = this.runwayDashes;
-    graphics.clear();
-    graphics.lineStyle(gameUnits(12), 0xffffff, 0.28);
-    const inset = gameUnits(70);
-    const fromX = this.laneLeft + inset;
-    const toX = this.laneRight - inset;
-    for (let y = this.runwayOffset - spacing; y < GAME_HEIGHT; y += spacing) {
-      graphics.lineBetween(fromX, y, toX, y);
-    }
-  }
-
   private showBanner(message: string): void {
     this.banner.setText(message);
     this.tweens.killTweensOf(this.banner);
@@ -780,13 +893,112 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateHud(): void {
-    this.scoreText.setText(`分数 ${this.score}`);
-    this.waveText.setText(`波次 ${this.wave}`);
-    const weaponLabel =
-      this.weaponLevel >= POWER_UP.maxWeaponLevel
-        ? '武器 MAX'
-        : `武器 Lv.${this.weaponLevel}`;
-    this.weaponText.setText(weaponLabel);
+    this.hud.update({
+      score: this.score,
+      wave: this.wave,
+      weaponLevel: this.weaponLevel,
+      spawnedThisWave: this.spawnedThisWave,
+      waveTotal: this.waveTotal,
+      activeEnemies: this.enemies.countActive(true),
+    });
+  }
+
+  /**
+   * 每帧同步透视表现：缩放（远小近大）、按 y 排序的层级，以及挂载物（影子/血量文字）。
+   * 只改视觉，不参与任何玩法判定。
+   */
+  private syncPerspective(): void {
+    // 敌人：缩放 + 层级 + 影子 + 血量文字
+    for (const child of this.enemies.getChildren()) {
+      const enemy = child as Phaser.Physics.Arcade.Sprite;
+      if (!enemy.active) {
+        continue;
+      }
+      const scale = getPerspectiveScaleAtY(enemy.y);
+      const baseScale = (enemy.getData('baseScale') as number) ?? 1;
+      // 正在播放受击放大动画的敌人不覆盖其 scale，避免 tween 被每帧重置。
+      if (enemy.getData('dying') !== true) {
+        enemy.setScale(baseScale * scale);
+      }
+      const depth = getDepthAtY(enemy.y);
+      enemy.setDepth(depth);
+
+      const hpText = enemy.getData('hpText') as
+        | Phaser.GameObjects.Text
+        | undefined;
+      if (hpText?.active) {
+        hpText.setPosition(
+          enemy.x,
+          enemy.y - ENEMY.height * scale * ENEMY.hpTextOffsetRatio,
+        );
+        hpText.setDepth(depth + 0.1);
+      }
+      const shadow = enemy.getData('shadow') as
+        | Phaser.GameObjects.Ellipse
+        | undefined;
+      if (shadow?.active) {
+        shadow.setPosition(enemy.x, enemy.y + ENEMY.height * scale * 0.44);
+        shadow.setScale(scale);
+        shadow.setDepth(depth - 0.05);
+      }
+    }
+
+    // 道具：缩放 + 层级（拾取碰撞随 Arcade body 自动跟随缩放）
+    for (const child of this.powerUps.getChildren()) {
+      const powerUp = child as Phaser.Physics.Arcade.Sprite;
+      if (!powerUp.active) {
+        continue;
+      }
+      const baseScale = (powerUp.getData('baseScale') as number) ?? 1;
+      powerUp.setScale(baseScale * getPerspectiveScaleAtY(powerUp.y));
+      powerUp.setDepth(getDepthAtY(powerUp.y));
+    }
+
+    // 子弹：只排序层级，不改缩放（保持命中判定与观感稳定）
+    for (const child of this.bullets.getChildren()) {
+      const bullet = child as Phaser.Physics.Arcade.Sprite;
+      if (bullet.active) {
+        bullet.setDepth(getDepthAtY(bullet.y) + 0.6);
+      }
+    }
+  }
+
+  /** 击杀掉落金币：弹出后飞向右上角金币 HUD，入账时数字弹一下。 */
+  private spawnCoins(x: number, y: number): void {
+    const count = Phaser.Math.Between(ENEMY.coinDropMin, ENEMY.coinDropMax);
+    const targetScale =
+      (ENEMY.coinSize / COIN_TEXTURE_SIZE) * getPerspectiveScaleAtY(y);
+    for (let index = 0; index < count; index += 1) {
+      const coin = this.add
+        .image(
+          x + Phaser.Math.Between(-gameUnits(40), gameUnits(40)),
+          y + Phaser.Math.Between(-gameUnits(24), gameUnits(24)),
+          TEX.coin,
+        )
+        .setDepth(getDepthAtY(y) + 0.3)
+        .setScale(0);
+      this.tweens.add({
+        targets: coin,
+        scale: targetScale,
+        duration: 90,
+        delay: index * 45,
+        ease: 'Back.out',
+        onComplete: () => {
+          this.tweens.add({
+            targets: coin,
+            x: this.hud.coinTarget.x,
+            y: this.hud.coinTarget.y,
+            duration: ENEMY.coinFlyMs,
+            ease: 'Cubic.in',
+            onComplete: () => {
+              coin.destroy();
+              this.coins += 1;
+              this.hud.setCoins(this.coins, true);
+            },
+          });
+        },
+      });
+    }
   }
 
   private gameOver(): void {
@@ -802,9 +1014,17 @@ export class GameScene extends Phaser.Scene {
     this.spawnTimer = undefined;
     this.nextWaveTimer = undefined;
     this.physics.pause();
-    this.cameras.main.shake(FEEDBACK.shakeDurationMs, FEEDBACK.shakeIntensity);
+    this.fx.shakeScreen();
 
     this.player.setTint(0xff6b6b);
+    this.player.anims?.pause();
+    for (const follower of this.squadFollowers) {
+      follower.setAlpha(0.5);
+      follower.anims?.pause();
+    }
+    for (const child of this.enemies.getChildren()) {
+      (child as Phaser.Physics.Arcade.Sprite).anims?.pause();
+    }
     this.tweens.add({
       targets: this.player,
       x: this.player.x + gameUnits(24),

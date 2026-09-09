@@ -130,3 +130,32 @@ export const floatText = (
     onComplete: () => label.destroy(),
   });
 };
+
+/** HUD 半透明胶囊底板：让文字在任何背景上都可读。 */
+export const drawHudPill = (
+  scene: Phaser.Scene,
+  centerX: number,
+  centerY: number,
+  width: number,
+  height: number,
+  depth = 9,
+): Phaser.GameObjects.Graphics => {
+  const pill = scene.add.graphics().setDepth(depth);
+  pill.fillStyle(0x0f172a, 0.34);
+  pill.fillRoundedRect(
+    centerX - width / 2,
+    centerY - height / 2,
+    width,
+    height,
+    height / 2,
+  );
+  pill.lineStyle(gameUnits(3), 0xffffff, 0.28);
+  pill.strokeRoundedRect(
+    centerX - width / 2,
+    centerY - height / 2,
+    width,
+    height,
+    height / 2,
+  );
+  return pill;
+};

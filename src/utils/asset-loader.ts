@@ -1,6 +1,12 @@
 import type Phaser from 'phaser';
 
-import { AUDIOS, IMAGES, IMAGE_SEQUENCES, VIDEOS } from '../assets';
+import {
+  AUDIOS,
+  IMAGES,
+  IMAGE_SEQUENCES,
+  OPTIONAL_IMAGES,
+  VIDEOS,
+} from '../assets';
 import type {
   AssetCollections,
   AssetSources,
@@ -153,6 +159,24 @@ export const loadImageSequenceManifests = (
     queueImageSequenceManifest(scene, assetKey, directory);
     return fileCount + 1;
   }, 0);
+
+/** 可选素材是否属于"尽力加载"集合（失败不影响主流程）。 */
+export const isOptionalAssetKey = (fileKey: string): boolean =>
+  getAssetKeyFromFileKey(fileKey) in OPTIONAL_IMAGES;
+
+/**
+ * 排队可选素材：文件缺失时 Phaser 会触发 loaderror，
+ * 由 BootScene 忽略即可，游戏继续使用程序化纹理。
+ */
+export const queueOptionalImages = (scene: Phaser.Scene): number => {
+  Object.entries(OPTIONAL_IMAGES).forEach(([assetKey, source]) => {
+    if (scene.textures.exists(assetKey)) {
+      return;
+    }
+    scene.load.image(assetKey, resolveAssetUrl(source));
+  });
+  return Object.keys(OPTIONAL_IMAGES).length;
+};
 
 export const loadAssets = (
   scene: Phaser.Scene,
