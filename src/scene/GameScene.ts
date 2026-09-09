@@ -81,6 +81,8 @@ export class GameScene extends Phaser.Scene {
   private pointerId: number | null = null;
   private dragOffsetX = 0;
   private targetX = GAME_CENTER_X;
+  // 编队跟随成员（1 号是玩家本体，跟随者数量 = weaponLevel - 1）
+  private squadFollowers: Phaser.Physics.Arcade.Sprite[] = [];
   // 开局提示层：ready 状态展示，点击后销毁并进入 playing。
   private readyLayer: Phaser.GameObjects.GameObject[] = [];
   private skipIntro = false;
