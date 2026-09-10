@@ -15,11 +15,16 @@ import {
   getLaneHalfWidthAtY,
   getPerspectiveScaleAtY,
 } from './perspective';
+import {
+  OPTIONAL_TEX,
+  hasOptionalTexture,
+  type OptionalTexSlot,
+} from './textures';
 import { FONT_FAMILY } from './ui';
 
 interface Gate {
   container: Phaser.GameObjects.Container;
-  board: Phaser.GameObjects.Graphics;
+  visual: Phaser.GameObjects.Graphics | Phaser.GameObjects.Image;
   label: Phaser.GameObjects.Text;
   /** 车道位置（-1 ~ 1），用于沿透视跑道横向分布 */
   laneU: number;
@@ -29,6 +34,13 @@ interface Gate {
 }
 
 const GATE_KINDS: GateKind[] = ['squad', 'coin', 'score'];
+
+/** 门类型 → 可选素材槽位（rage 当前无门类型，素材仅预留）。 */
+const GATE_TEX_SLOT: Record<GateKind, OptionalTexSlot> = {
+  squad: 'gateSquad',
+  coin: 'gateCoin',
+  score: 'gateScore',
+};
 
 /**
  * 跑道增益门（选择门）：一组两个门，随跑道向下移动，
@@ -169,43 +181,52 @@ export class GateSystem {
     y: number,
   ): Gate {
     const reward = GATE_REWARDS[kind];
-    const board = this.scene.add.graphics();
-    // 投影：偏移的深色圆角矩形，制造立体感
-    board.fillStyle(0x0f172a, 0.35);
-    board.fillRoundedRect(
-      -width / 2 + gameUnits(8),
-      -height / 2 + gameUnits(14),
-      width,
-      height,
-      Math.min(height / 2, width / 2),
-    );
-    // 门体
-    board.fillStyle(reward.color, 0.95);
-    board.fillRoundedRect(
-      -width / 2,
-      -height / 2,
-      width,
-      height,
-      Math.min(height / 2, width / 2),
-    );
-    // 厚描边
-    board.lineStyle(gameUnits(10), 0xffffff, 0.95);
-    board.strokeRoundedRect(
-      -width / 2,
-      -height / 2,
-      width,
-      height,
-      Math.min(height / 2, width / 2),
-    );
-    // 顶部高光条
-    board.fillStyle(0xffffff, 0.28);
-    board.fillRoundedRect(
-      -width / 2 + gameUnits(14),
-      -height / 2 + gameUnits(12),
-      width - gameUnits(28),
-      gameUnits(16),
-      gameUnits(8),
-    );
+    // 优先使用门素材图（显示尺寸仍由代码控制），缺失时回退 Graphics 圆角牌
+    let visual: Phaser.GameObjects.Graphics | Phaser.GameObjects.Image;
+    if (hasOptionalTexture(this.scene, GATE_TEX_SLOT[kind])) {
+      visual = this.scene.add
+        .image(0, 0, OPTIONAL_TEX[GATE_TEX_SLOT[kind]])
+        .setDisplaySize(width, height);
+    } else {
+      const board = this.scene.add.graphics();
+      // 投影：偏移的深色圆角矩形，制造立体感
+      board.fillStyle(0x0f172a, 0.35);
+      board.fillRoundedRect(
+        -width / 2 + gameUnits(8),
+        -height / 2 + gameUnits(14),
+        width,
+        height,
+        Math.min(height / 2, width / 2),
+      );
+      // 门体
+      board.fillStyle(reward.color, 0.95);
+      board.fillRoundedRect(
+        -width / 2,
+        -height / 2,
+        width,
+        height,
+        Math.min(height / 2, width / 2),
+      );
+      // 厚描边
+      board.lineStyle(gameUnits(10), 0xffffff, 0.95);
+      board.strokeRoundedRect(
+        -width / 2,
+        -height / 2,
+        width,
+        height,
+        Math.min(height / 2, width / 2),
+      );
+      // 顶部高光条
+      board.fillStyle(0xffffff, 0.28);
+      board.fillRoundedRect(
+        -width / 2 + gameUnits(14),
+        -height / 2 + gameUnits(12),
+        width - gameUnits(28),
+        gameUnits(16),
+        gameUnits(8),
+      );
+      visual = board;
+    }
 
     const label = this.scene.add
       .text(0, 0, reward.label, {
@@ -219,7 +240,7 @@ export class GateSystem {
       .setShadow(0, gameUnits(3), 'rgba(15, 23, 42, 0.55)', gameUnits(4));
 
     const container = this.scene.add.container(GAME_CENTER_X, y, [
-      board,
+      visual,
       label,
     ]);
     // 淡入，避免门突然出现
@@ -232,7 +253,7 @@ export class GateSystem {
     });
     // 呼吸动画作用于内部元素，避免与每帧的透视缩放互相覆盖
     this.scene.tweens.add({
-      targets: [board, label],
+      targets: [visual, label],
       scale: GATE.pulseScale,
       duration: GATE.pulseMs,
       yoyo: true,
@@ -240,7 +261,7 @@ export class GateSystem {
       ease: 'Sine.inOut',
     });
 
-    return { container, board, label, laneU: 0, kind, width, height };
+    return { container, visual, label, laneU: 0, kind, width, height };
   }
 
   private hitsMember(
@@ -273,7 +294,7 @@ export class GateSystem {
   }
 
   private destroyGate(gate: Gate): void {
-    this.scene.tweens.killTweensOf([gate.board, gate.label, gate.container]);
+    this.scene.tweens.killTweensOf([gate.visual, gate.label, gate.container]);
     gate.container.destroy();
   }
 }

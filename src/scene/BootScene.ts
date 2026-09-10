@@ -8,6 +8,7 @@ import {
   loadImageSequenceManifests,
   markEditable,
   queueOptionalImages,
+  logOptionalAssetStatus,
   registerImageSequenceAnimations,
 } from '@/utils';
 import {
@@ -258,6 +259,7 @@ export class BootScene extends Phaser.Scene {
     }
 
     registerImageSequenceAnimations(this, GAME_IMAGE_SEQUENCES);
+    logOptionalAssetStatus(this);
     // 流程导航接入薄层通过 registry 声明启动目标；默认进入菜单。
     const target = this.registry.get('launchTarget') as
       | { scene?: string; data?: Record<string, unknown> }

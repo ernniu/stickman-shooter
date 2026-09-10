@@ -74,6 +74,9 @@ export const FEEDBACK = {
   // 受击：闪白 + 轻微放大的持续时长
   hitFlashMs: 80,
   hitScale: 1.15,
+  // 命中火花（仅当 hit_spark_sprite 素材存在时播放）
+  hitSparkSize: gameUnits(120),
+  hitSparkMs: 160,
   // 死亡爆炸：碎片数量固定（不用持续发射器），扩散半径与时长
   explosionShards: 8,
   explosionRadius: gameUnits(120),
@@ -81,6 +84,19 @@ export const FEEDBACK = {
   // Game Over 震屏
   shakeDurationMs: 260,
   shakeIntensity: 0.008,
+} as const;
+
+/** 云层素材的视差参数（无素材时程序化云不受影响）。 */
+export const CLOUD_LAYERS = {
+  farWidthRatio: 0.46,
+  nearWidthRatio: 0.32,
+  farSpeedRatio: 0.55,
+  nearSpeedRatio: 1.1,
+  farDepth: -8.6,
+  nearDepth: -8.1,
+  baseSpeed: gameUnits(60),
+  speedJitter: gameUnits(90),
+  wrapMargin: gameUnits(220),
 } as const;
 
 /** 关卡进度条（纯 UI，不改波次逻辑）：每 wavesPerLevel 波为一“关”。 */

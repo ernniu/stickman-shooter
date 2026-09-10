@@ -178,6 +178,23 @@ export const queueOptionalImages = (scene: Phaser.Scene): number => {
   return Object.keys(OPTIONAL_IMAGES).length;
 };
 
+/** 启动完成后输出可选素材的加载结果（成功/回退），仅用于排查，不影响运行。 */
+export const logOptionalAssetStatus = (scene: Phaser.Scene): void => {
+  const loaded: string[] = [];
+  const fallback: string[] = [];
+  Object.keys(OPTIONAL_IMAGES).forEach(assetKey => {
+    (scene.textures.exists(assetKey) ? loaded : fallback).push(assetKey);
+  });
+  if (loaded.length > 0) {
+    console.info(`[可选素材] 加载成功 (${loaded.length}): ${loaded.join(', ')}`);
+  }
+  if (fallback.length > 0) {
+    console.info(
+      `[可选素材] 未提供，使用程序化纹理 (${fallback.length}): ${fallback.join(', ')}`,
+    );
+  }
+};
+
 export const loadAssets = (
   scene: Phaser.Scene,
   collections: AssetCollections,

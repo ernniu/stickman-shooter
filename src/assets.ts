@@ -10,6 +10,16 @@ export const OPTIONAL_IMAGES: Record<string, string> = {
   enemy_normal_sprite: 'assets/image/enemy_normal_sprite.png',
   bullet_sprite: 'assets/image/bullet_sprite.png',
   powerup_weapon_sprite: 'assets/image/powerup_weapon_sprite.png',
+  coin_sprite: 'assets/image/coin_sprite.png',
+  gate_squad_sprite: 'assets/image/gate_squad_sprite.png',
+  gate_coin_sprite: 'assets/image/gate_coin_sprite.png',
+  gate_score_sprite: 'assets/image/gate_score_sprite.png',
+  // 预留：当前门类型只有 squad/coin/score，狂暴门加入后自动生效
+  gate_rage_sprite: 'assets/image/gate_rage_sprite.png',
+  background_sky: 'assets/image/background_sky.png',
+  cloud_layer_far: 'assets/image/cloud_layer_far.png',
+  cloud_layer_near: 'assets/image/cloud_layer_near.png',
+  hit_spark_sprite: 'assets/image/hit_spark_sprite.png',
 };
 
 export const IMAGE_SEQUENCES: Record<string, string> = {

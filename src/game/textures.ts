@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-import { RUNWAY } from '@/game/gameConfig';
+import { CLOUD_LAYERS, RUNWAY } from '@/game/gameConfig';
 import { getLaneBoundsAtY } from './perspective';
 import { GAME_HEIGHT, GAME_WIDTH, gameUnits } from '@/rendering';
 
@@ -216,6 +216,15 @@ export const OPTIONAL_TEX = {
   enemy: 'enemy_normal_sprite',
   bullet: 'bullet_sprite',
   powerUp: 'powerup_weapon_sprite',
+  coin: 'coin_sprite',
+  gateSquad: 'gate_squad_sprite',
+  gateCoin: 'gate_coin_sprite',
+  gateScore: 'gate_score_sprite',
+  gateRage: 'gate_rage_sprite',
+  backgroundSky: 'background_sky',
+  cloudFar: 'cloud_layer_far',
+  cloudNear: 'cloud_layer_near',
+  hitSpark: 'hit_spark_sprite',
 } as const;
 
 export type OptionalTexSlot = keyof typeof OPTIONAL_TEX;
@@ -230,6 +239,12 @@ export const resolveTexture = (
   fallback: string,
 ): string =>
   scene.textures.exists(OPTIONAL_TEX[slot]) ? OPTIONAL_TEX[slot] : fallback;
+
+/** 可选素材是否存在（用于"有素材才播"的效果，如命中火花）。 */
+export const hasOptionalTexture = (
+  scene: Phaser.Scene,
+  slot: OptionalTexSlot,
+): boolean => scene.textures.exists(OPTIONAL_TEX[slot]);
 
 /** 注册两帧跑步动画（重复调用安全）。 */
 export const registerRunAnimations = (scene: Phaser.Scene): void => {
@@ -251,8 +266,17 @@ export const registerRunAnimations = (scene: Phaser.Scene): void => {
   }
 };
 
-/** 全屏背景：蓝天渐变 + 太阳光晕（程序化绘制）。 */
+/** 全屏背景：优先 background_sky 素材，否则蓝天渐变 + 太阳光晕（程序化绘制）。 */
 export const addSkyBackground = (scene: Phaser.Scene): void => {
+  if (hasOptionalTexture(scene, 'backgroundSky')) {
+    scene.add
+      .image(0, 0, OPTIONAL_TEX.backgroundSky)
+      .setOrigin(0, 0)
+      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT)
+      .setDepth(-10);
+    return;
+  }
+
   scene.add
     .image(0, 0, TEX.sky)
     .setOrigin(0, 0)
@@ -283,15 +307,65 @@ export const createCloud = (
   return cloud;
 };
 
-/** 云层按各自速度向下漂移，出屏后回到顶部形成循环。 */
+/**
+ * 云层：优先使用 cloud_layer_far / cloud_layer_near 素材并做视差滚动
+ * （远层慢、近层快），缺失的层回退到程序化 Graphics 云。
+ */
 export class CloudField {
   private readonly clouds: Array<{
-    cloud: Phaser.GameObjects.Graphics;
+    cloud: Phaser.GameObjects.Graphics | Phaser.GameObjects.Image;
     speed: number;
   }> = [];
 
   constructor(scene: Phaser.Scene, count = 6) {
-    for (let index = 0; index < count; index += 1) {
+    const spawnImageLayer = (
+      slot: OptionalTexSlot,
+      widthRatio: number,
+      speedRatio: number,
+      depth: number,
+      instances: number,
+    ): number => {
+      if (!hasOptionalTexture(scene, slot)) {
+        return 0;
+      }
+      for (let index = 0; index < instances; index += 1) {
+        const width = GAME_WIDTH * (widthRatio * (0.75 + Math.random() * 0.5));
+        const image = scene.add
+          .image(0, 0, OPTIONAL_TEX[slot])
+          .setDisplaySize(width, width)
+          .setDepth(depth)
+          .setAlpha(0.7 + Math.random() * 0.3);
+        image.setPosition(
+          Math.random() * GAME_WIDTH,
+          Math.random() * GAME_HEIGHT * 0.85,
+        );
+        this.clouds.push({
+          cloud: image,
+          speed:
+            CLOUD_LAYERS.baseSpeed * speedRatio +
+            Math.random() * CLOUD_LAYERS.speedJitter,
+        });
+      }
+      return instances;
+    };
+
+    // 素材层：远层一半、近层一半；某层缺素材时名额让给程序化云
+    let spawned = spawnImageLayer(
+      'cloudFar',
+      CLOUD_LAYERS.farWidthRatio,
+      CLOUD_LAYERS.farSpeedRatio,
+      CLOUD_LAYERS.farDepth,
+      Math.ceil(count / 2),
+    );
+    spawned += spawnImageLayer(
+      'cloudNear',
+      CLOUD_LAYERS.nearWidthRatio,
+      CLOUD_LAYERS.nearSpeedRatio,
+      CLOUD_LAYERS.nearDepth,
+      Math.floor(count / 2),
+    );
+
+    for (let index = spawned; index < count; index += 1) {
       const scale = 0.55 + Math.random() * 0.85;
       const cloud = createCloud(
         scene,
@@ -310,8 +384,8 @@ export class CloudField {
   update(deltaSeconds: number): void {
     for (const entry of this.clouds) {
       entry.cloud.y += entry.speed * deltaSeconds;
-      if (entry.cloud.y > GAME_HEIGHT + gameUnits(220)) {
-        entry.cloud.y = -gameUnits(220);
+      if (entry.cloud.y > GAME_HEIGHT + CLOUD_LAYERS.wrapMargin) {
+        entry.cloud.y = -CLOUD_LAYERS.wrapMargin;
         entry.cloud.x = Math.random() * GAME_WIDTH;
       }
     }

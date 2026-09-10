@@ -132,7 +132,7 @@ export class HudController {
       .image(
         GAME_WIDTH - HUD.marginX - gameUnits(40),
         HUD.y,
-        TEX.coin,
+        resolveTexture(this.scene, 'coin', TEX.coin),
       )
       .setDisplaySize(gameUnits(88), gameUnits(88))
       .setDepth(10);

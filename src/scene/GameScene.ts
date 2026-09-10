@@ -30,10 +30,12 @@ import {
 import {
   CloudField,
   COIN_TEXTURE_SIZE,
+  OPTIONAL_TEX,
   TEX,
   addSkyBackground,
   drawDangerLine,
   ensureGameTextures,
+  hasOptionalTexture,
   registerRunAnimations,
   resolveTexture,
 } from '@/game/textures';
@@ -662,7 +664,8 @@ export class GameScene extends Phaser.Scene {
       | undefined;
 
     if (hp > 0) {
-      // 非致命：短促闪白，不打断下落
+      // 非致命：命中火花（有素材时）+ 短促闪白，不打断下落
+      this.spawnHitSpark(enemy.x, enemy.y);
       enemy.setTintFill(0xffffff);
       this.time.delayedCall(Math.round(FEEDBACK.hitFlashMs * 0.75), () => {
         if (enemy.active) {
@@ -686,6 +689,7 @@ export class GameScene extends Phaser.Scene {
     enemy.setData('dying', true);
     enemy.setVelocityY(0);
     enemy.setTintFill(0xffffff);
+    this.spawnHitSpark(enemy.x, enemy.y);
     hpText?.setText('0');
     this.tweens.add({
       targets: enemy,
@@ -1199,17 +1203,37 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** 命中火花：仅当 hit_spark_sprite 素材存在时播放，短暂缩放淡出后自毁。 */
+  private spawnHitSpark(x: number, y: number): void {
+    if (!hasOptionalTexture(this, 'hitSpark')) {
+      return;
+    }
+    const spark = this.add
+      .image(x, y, OPTIONAL_TEX.hitSpark)
+      .setDisplaySize(FEEDBACK.hitSparkSize, FEEDBACK.hitSparkSize)
+      .setDepth(getDepthAtY(y) + 0.5);
+    this.tweens.add({
+      targets: spark,
+      scale: spark.scale * 1.35,
+      alpha: 0,
+      duration: FEEDBACK.hitSparkMs,
+      ease: 'Quad.out',
+      onComplete: () => spark.destroy(),
+    });
+  }
+
   /** 击杀掉落金币：弹出后飞向右上角金币 HUD，入账时数字弹一下。 */
   private spawnCoins(x: number, y: number): void {
     const count = Phaser.Math.Between(ENEMY.coinDropMin, ENEMY.coinDropMax);
     const targetScale =
       (ENEMY.coinSize / COIN_TEXTURE_SIZE) * getPerspectiveScaleAtY(y);
+    const coinTexture = resolveTexture(this, 'coin', TEX.coin);
     for (let index = 0; index < count; index += 1) {
       const coin = this.add
         .image(
           x + Phaser.Math.Between(-gameUnits(40), gameUnits(40)),
           y + Phaser.Math.Between(-gameUnits(24), gameUnits(24)),
-          TEX.coin,
+          coinTexture,
         )
         .setDepth(getDepthAtY(y) + 0.3)
         .setScale(0);
