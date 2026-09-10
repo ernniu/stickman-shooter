@@ -5,6 +5,7 @@ import {
   DANGER_LINE_Y,
   ENEMY,
   FEEDBACK,
+  GATE,
   PLAYER,
   PLAYER_Y,
   POWER_UP,
@@ -12,8 +13,10 @@ import {
   enemyCountForWave,
   enemyHpForWave,
   enemySpeedForWave,
+  type GateReward,
 } from '@/game/gameConfig';
 import { FxSystem } from '@/game/FxSystem';
+import { GateSystem } from '@/game/GateSystem';
 import { HudController } from '@/game/HudController';
 import { RunwayRenderer } from '@/game/RunwayRenderer';
 import {
@@ -64,6 +67,9 @@ export class GameScene extends Phaser.Scene {
   private readonly hud = new HudController(this);
   private readonly fx = new FxSystem(this);
   private readonly runway = new RunwayRenderer(this);
+  private readonly gates = new GateSystem(this, (reward, x, y) =>
+    this.applyGateReward(reward, x, y),
+  );
   private keys: Partial<
     Record<'LEFT' | 'RIGHT' | 'A' | 'D', Phaser.Input.Keyboard.Key>
   > = {};
@@ -104,6 +110,7 @@ export class GameScene extends Phaser.Scene {
     this.waveTotal = 0;
     this.spawnedThisWave = 0;
     this.swingTime = 0;
+    this.gates.reset();
     this.fireTimer = undefined;
     this.spawnTimer = undefined;
     this.nextWaveTimer = undefined;
@@ -362,6 +369,7 @@ export class GameScene extends Phaser.Scene {
       this.input.off(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
       this.input.off(Phaser.Input.Events.POINTER_MOVE, this.onPointerMove, this);
       this.input.off(Phaser.Input.Events.POINTER_UP, this.onPointerUp, this);
+      this.gates.clear();
       this.fireTimer?.remove();
       this.spawnTimer?.remove();
       this.nextWaveTimer?.remove();
@@ -391,6 +399,9 @@ export class GameScene extends Phaser.Scene {
     if (wave % POWER_UP.dropEveryWaves === 0) {
       this.spawnPowerUp();
     }
+
+    // 增益门：同屏已有道具时跳过，避免画面元素过乱
+    this.gates.onWaveStart(wave, this.powerUps.countActive(true) === 0);
   }
 
   private spawnEnemy(): void {
@@ -689,6 +700,44 @@ export class GameScene extends Phaser.Scene {
         '#fff8dc',
       );
     }
+  }
+
+  /** 触发增益门：应用奖励并给出提示飘字（编队已满时自动转为金币/分数）。 */
+  private applyGateReward(
+    reward: GateReward,
+    x: number,
+    y: number,
+  ): void {
+    const color = `#${reward.color.toString(16).padStart(6, '0')}`;
+    let toast = reward.toast;
+
+    if (reward.squad > 0) {
+      if (this.weaponLevel < POWER_UP.maxWeaponLevel) {
+        this.weaponLevel += 1;
+        this.syncSquad();
+        this.player.setTint(0x38bdf8);
+        this.time.delayedCall(180, () => {
+          if (this.player.active) {
+            this.player.clearTint();
+          }
+        });
+      } else {
+        // 编队已满：转为金币/分数奖励，避免门“无效果”
+        this.coins += GATE.squadFullCoins;
+        this.score += GATE.squadFullScore;
+        this.hud.setCoins(this.coins, true);
+        toast = GATE.squadFullToast;
+      }
+    } else {
+      this.coins += reward.coins;
+      this.score += reward.score;
+      if (reward.coins > 0) {
+        this.hud.setCoins(this.coins, true);
+      }
+    }
+
+    this.updateHud();
+    floatText(this, x, y - gameUnits(60), toast, color, { pop: true });
   }
 
   private onPlayerTouchedByEnemy(

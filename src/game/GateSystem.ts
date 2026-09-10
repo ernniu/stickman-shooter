@@ -1,0 +1,243 @@
+import Phaser from 'phaser';
+
+import {
+  GAME_CENTER_X,
+  GAME_HEIGHT,
+  GAME_WIDTH,
+  gamePixels,
+  gameUnits,
+} from '@/rendering';
+
+import { GATE, GATE_REWARDS, type GateKind, type GateReward } from './gameConfig';
+import {
+  getDepthAtY,
+  getLaneHalfWidthAtY,
+  getPerspectiveScaleAtY,
+} from './perspective';
+import { FONT_FAMILY } from './ui';
+
+interface Gate {
+  container: Phaser.GameObjects.Container;
+  board: Phaser.GameObjects.Graphics;
+  label: Phaser.GameObjects.Text;
+  /** 车道位置（-1 ~ 1），用于沿透视跑道横向分布 */
+  laneU: number;
+  kind: GateKind;
+  width: number;
+  height: number;
+}
+
+const GATE_KINDS: GateKind[] = ['squad', 'coin', 'score'];
+
+/**
+ * 跑道增益门（选择门）：一组两个门，随跑道向下移动，
+ * 玩家或任意编队成员碰到其中一个即触发，同组另一扇同时消失。
+ */
+export class GateSystem {
+  private groups: Gate[][] = [];
+  private lastSpawnAt = Number.NEGATIVE_INFINITY;
+
+  constructor(
+    private readonly scene: Phaser.Scene,
+    private readonly onPick: (
+      reward: GateReward,
+      x: number,
+      y: number,
+    ) => void,
+  ) {}
+
+  /** 重开一局时清空状态。 */
+  reset(): void {
+    this.clear();
+    this.lastSpawnAt = Number.NEGATIVE_INFINITY;
+  }
+
+  /** 销毁全部门（场景关闭或重开时调用）。 */
+  clear(): void {
+    for (const group of this.groups) {
+      for (const gate of group) {
+        this.destroyGate(gate);
+      }
+    }
+    this.groups = [];
+  }
+
+  /** 波次开始时按需生成一组门。 */
+  onWaveStart(wave: number, canSpawn: boolean): void {
+    if (wave < GATE.startWave) {
+      return;
+    }
+    if ((wave - GATE.startWave) % GATE.everyWaves !== 0) {
+      return;
+    }
+    if (!canSpawn) {
+      return;
+    }
+    const now = this.scene.time.now;
+    if (now - this.lastSpawnAt < GATE.minIntervalMs) {
+      return;
+    }
+    if (this.groups.length > 0) {
+      // 同屏最多一组，避免画面过乱
+      return;
+    }
+
+    this.spawnGroup();
+    this.lastSpawnAt = now;
+  }
+
+  update(
+    deltaSeconds: number,
+    members: Phaser.Physics.Arcade.Sprite[],
+  ): void {
+    for (let index = this.groups.length - 1; index >= 0; index -= 1) {
+      const group = this.groups[index];
+      let picked: Gate | null = null;
+
+      for (const gate of group) {
+        gate.container.y += GATE.speed * deltaSeconds;
+        const y = gate.container.y;
+        // 沿透视车道横向分布 + 缩放 + 层级排序
+        const halfWidth = getLaneHalfWidthAtY(y);
+        gate.container.x = GAME_CENTER_X + gate.laneU * halfWidth * 0.9;
+        gate.container.setScale(getPerspectiveScaleAtY(y));
+        gate.container.setDepth(getDepthAtY(y));
+        if (!picked && this.hitsMember(gate, members)) {
+          picked = gate;
+        }
+      }
+
+      if (picked) {
+        const reward = GATE_REWARDS[picked.kind];
+        const x = picked.container.x;
+        const y = picked.container.y;
+        this.destroyGroup(group);
+        this.groups.splice(index, 1);
+        this.onPick(reward, x, y);
+        continue;
+      }
+
+      // 离屏销毁
+      const last = group[group.length - 1];
+      if (last && last.container.y > GAME_HEIGHT + last.height) {
+        this.destroyGroup(group);
+        this.groups.splice(index, 1);
+      }
+    }
+  }
+
+  private spawnGroup(): void {
+    const spawnY = GAME_HEIGHT * GATE.spawnYRatio;
+    const gap = GAME_WIDTH * GATE.gapRatio;
+    const maxWidth = (GAME_WIDTH - gap) / 2 - gameUnits(24);
+    const width = Math.min(GAME_WIDTH * GATE.widthRatio, maxWidth);
+    const height = GAME_HEIGHT * GATE.heightRatio;
+    const kinds = this.pickKinds();
+    const laneUs = [-0.55, 0.55];
+
+    const group: Gate[] = kinds.map((kind, index) => {
+      const gate = this.createGate(kind, width, height, spawnY);
+      gate.laneU = laneUs[index];
+      gate.container.x = GAME_CENTER_X + gate.laneU * getLaneHalfWidthAtY(spawnY) * 0.9;
+      return gate;
+    });
+    this.groups.push(group);
+  }
+
+  /** 随机取两种不同类型的门（保证左右有差异）。 */
+  private pickKinds(): GateKind[] {
+    const firstIndex = Phaser.Math.Between(0, GATE_KINDS.length - 1);
+    let secondIndex = Phaser.Math.Between(0, GATE_KINDS.length - 2);
+    if (secondIndex >= firstIndex) {
+      secondIndex += 1;
+    }
+    return [GATE_KINDS[firstIndex], GATE_KINDS[secondIndex]];
+  }
+
+  private createGate(
+    kind: GateKind,
+    width: number,
+    height: number,
+    y: number,
+  ): Gate {
+    const reward = GATE_REWARDS[kind];
+    const board = this.scene.add.graphics();
+    board.fillStyle(reward.color, 0.92);
+    board.fillRoundedRect(
+      -width / 2,
+      -height / 2,
+      width,
+      height,
+      Math.min(height / 2, width / 2),
+    );
+    board.lineStyle(gameUnits(5), 0xffffff, 0.9);
+    board.strokeRoundedRect(
+      -width / 2,
+      -height / 2,
+      width,
+      height,
+      Math.min(height / 2, width / 2),
+    );
+
+    const label = this.scene.add
+      .text(0, 0, reward.label, {
+        fontFamily: FONT_FAMILY,
+        fontSize: gamePixels(GATE.fontSize),
+        color: '#ffffff',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setStroke('#0f172a', gameUnits(6))
+      .setShadow(0, gameUnits(3), 'rgba(15, 23, 42, 0.55)', gameUnits(4));
+
+    const container = this.scene.add.container(GAME_CENTER_X, y, [
+      board,
+      label,
+    ]);
+    // 呼吸动画作用于内部元素，避免与每帧的透视缩放互相覆盖
+    this.scene.tweens.add({
+      targets: [board, label],
+      scale: GATE.pulseScale,
+      duration: GATE.pulseMs,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.inOut',
+    });
+
+    return { container, board, label, laneU: 0, kind, width, height };
+  }
+
+  private hitsMember(
+    gate: Gate,
+    members: Phaser.Physics.Arcade.Sprite[],
+  ): boolean {
+    const scale = gate.container.scale;
+    const halfW = (gate.width * scale) / 2;
+    const halfH = (gate.height * scale) / 2;
+    for (const member of members) {
+      if (!member.active) {
+        continue;
+      }
+      const memberHalfW = member.displayWidth * 0.35;
+      const memberHalfH = member.displayHeight * 0.35;
+      if (
+        Math.abs(member.x - gate.container.x) < halfW + memberHalfW &&
+        Math.abs(member.y - gate.container.y) < halfH + memberHalfH
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private destroyGroup(group: Gate[]): void {
+    for (const gate of group) {
+      this.destroyGate(gate);
+    }
+  }
+
+  private destroyGate(gate: Gate): void {
+    this.scene.tweens.killTweensOf([gate.board, gate.label]);
+    gate.container.destroy();
+  }
+}

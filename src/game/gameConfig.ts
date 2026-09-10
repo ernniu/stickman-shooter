@@ -115,6 +115,72 @@ export const RUNWAY = {
   depthRange: 8,
 } as const;
 
+/** 增益门类型（第一版只做正向增益，不做惩罚门）。 */
+export type GateKind = 'squad' | 'coin' | 'score';
+
+export interface GateReward {
+  /** 门牌上的文字 */
+  readonly label: string;
+  /** 触发后的提示飘字 */
+  readonly toast: string;
+  readonly color: number;
+  readonly squad: number;
+  readonly coins: number;
+  readonly score: number;
+}
+
+/** 跑道增益门（选择门）配置：尺寸、节奏、奖励全部集中在此。 */
+export const GATE = {
+  // 生成节奏：从 startWave 开始，每 everyWaves 波一组，且两组间隔不小于 minIntervalMs
+  startWave: 2,
+  everyWaves: 2,
+  minIntervalMs: 10000,
+  // 下落速度（略慢于敌人，避免与敌群完全同步）
+  speed: gameUnits(200),
+  // 生成高度（相对 GAME_HEIGHT，负值表示屏幕上方之外）
+  spawnYRatio: -0.12,
+  // 尺寸（相对 GAME_WIDTH / GAME_HEIGHT）
+  widthRatio: 0.26,
+  heightRatio: 0.075,
+  gapRatio: 0.06,
+  fontSize: 56,
+  // 呼吸动画
+  pulseScale: 1.05,
+  pulseMs: 620,
+  // 编队已满时“+1人”门转换成的奖励
+  squadFullCoins: 20,
+  squadFullScore: 0,
+  squadFullToast: '编队已满 +20金币',
+} as const;
+
+/** 每种门的奖励：编队 +1 / 金币 +20 / 分数 +100。 */
+export const GATE_REWARDS: Record<GateKind, GateReward> = {
+  squad: {
+    label: '+1人',
+    toast: '编队+1',
+    color: 0x38bdf8,
+    squad: 1,
+    coins: 0,
+    score: 0,
+  },
+  coin: {
+    label: '+20金币',
+    toast: '金币+20',
+    color: 0xfacc15,
+    squad: 0,
+    coins: 20,
+    score: 0,
+  },
+  score: {
+    label: '+100分',
+    toast: '分数+100',
+    color: 0xa78bfa,
+    squad: 0,
+    coins: 0,
+    score: 100,
+  },
+};
+
 /** 击杀血渍残留：跟随跑道滚动并淡出，结束后自动销毁。 */
 export const KILL_STAIN = {
   color: 0x7f1d1d,
