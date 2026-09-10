@@ -770,6 +770,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.updateSquadFormation(deltaSeconds);
     this.syncPerspective();
+    this.gates.update(deltaSeconds, [this.player, ...this.squadFollowers]);
     this.checkDangerLine();
     this.cullOffscreenObjects();
   }
