@@ -57,12 +57,13 @@ export class HudController {
       gameUnits(620),
       HUD.pillHeight,
     );
+    // 中上：小型波次徽章
     drawHudPill(
       this.scene,
       GAME_CENTER_X,
-      HUD.y + gameUnits(45),
-      gameUnits(320),
-      gameUnits(250),
+      HUD.y + gameUnits(20),
+      gameUnits(190),
+      gameUnits(190),
     );
     drawHudPill(
       this.scene,
@@ -85,25 +86,47 @@ export class HudController {
     this.waveText = addGameText(
       this.scene,
       GAME_CENTER_X,
-      HUD.y,
-      '波次 1',
-      hudStyle,
+      HUD.y + gameUnits(48),
+      '1',
+      {
+        fontFamily: FONT_FAMILY,
+        fontSize: gamePixels(96),
+        color: '#ffffff',
+        fontStyle: 'bold',
+      },
     )
       .setOrigin(0.5)
       .setStroke('#0f172a', gameUnits(8))
       .setDepth(10);
     markEditable('game.hud-wave', this.waveText, { label: '波次显示' });
+    addGameText(
+      this.scene,
+      GAME_CENTER_X,
+      HUD.y - gameUnits(38),
+      '波次',
+      {
+        fontFamily: FONT_FAMILY,
+        fontSize: gamePixels(40),
+        color: '#dbeafe',
+      },
+    )
+      .setOrigin(0.5)
+      .setDepth(10);
     this.weaponText = addGameText(
       this.scene,
       GAME_CENTER_X,
-      HUD.y + gameUnits(110),
-      '武器 Lv.1',
-      hudStyle,
+      HUD.y + gameUnits(160),
+      '编队 1',
+      {
+        fontFamily: FONT_FAMILY,
+        fontSize: gamePixels(44),
+        color: '#e0f2fe',
+      },
     )
       .setOrigin(0.5)
-      .setStroke('#0f172a', gameUnits(8))
+      .setStroke('#0f172a', gameUnits(6))
       .setDepth(10);
-    markEditable('game.hud-weapon', this.weaponText, { label: '武器等级显示' });
+    markEditable('game.hud-weapon', this.weaponText, { label: '编队显示' });
 
     this.coinIcon = this.scene.add
       .image(
@@ -158,7 +181,7 @@ export class HudController {
 
   update(view: HudView): void {
     this.scoreText.setText(`分数 ${view.score}`);
-    this.waveText.setText(`波次 ${view.wave}`);
+    this.waveText.setText(String(view.wave));
     const weaponLabel =
       view.weaponLevel >= POWER_UP.maxWeaponLevel
         ? '编队 MAX'

@@ -479,6 +479,21 @@ export class GameScene extends Phaser.Scene {
       .setStroke('#7f1d1d', gameUnits(6))
       .setDepth(getDepthAtY(spawnY) + 0.1);
     enemy.setData('hpText', hpText);
+    enemy.setData('maxHp', hp);
+
+    // 头顶小血条：背景 + 前景两个矩形，跟随敌人移动/缩放/层级
+    const barWidth = ENEMY.width * ENEMY.hpBarWidthRatio;
+    const barHeight = ENEMY.hpBarHeight;
+    const barY = spawnY - ENEMY.height * ENEMY.hpBarOffsetRatio;
+    const barBg = this.add
+      .rectangle(spawnX, barY, barWidth, barHeight, 0x2b1b1b, 0.55)
+      .setDepth(getDepthAtY(spawnY) + 0.06);
+    const barFill = this.add
+      .rectangle(spawnX - barWidth / 2, barY, barWidth, barHeight, 0x7ee081)
+      .setOrigin(0, 0.5)
+      .setDepth(getDepthAtY(spawnY) + 0.07);
+    enemy.setData('hpBarBg', barBg);
+    enemy.setData('hpBarFill', barFill);
 
     this.spawnedThisWave += 1;
   }
@@ -695,11 +710,19 @@ export class GameScene extends Phaser.Scene {
     const shadow = enemy.getData('shadow') as
       | Phaser.GameObjects.Ellipse
       | undefined;
+    const hpBarBg = enemy.getData('hpBarBg') as
+      | Phaser.GameObjects.Rectangle
+      | undefined;
+    const hpBarFill = enemy.getData('hpBarFill') as
+      | Phaser.GameObjects.Rectangle
+      | undefined;
     this.tweens.killTweensOf(enemy);
     enemy.destroy();
     hpText?.destroy();
     // 敌人被消灭时其脚下投影必须一并销毁，否则会永久残留成灰色椭圆阴影
     shadow?.destroy();
+    hpBarBg?.destroy();
+    hpBarFill?.destroy();
     this.score += ENEMY.score;
     this.updateHud();
     this.fx.deathBurst(x, y);
@@ -1125,6 +1148,26 @@ export class GameScene extends Phaser.Scene {
           enemy.y - ENEMY.height * scale * ENEMY.hpTextOffsetRatio,
         );
         hpText.setDepth(depth + 0.1);
+      }
+      const hpBarBg = enemy.getData('hpBarBg') as
+        | Phaser.GameObjects.Rectangle
+        | undefined;
+      const hpBarFill = enemy.getData('hpBarFill') as
+        | Phaser.GameObjects.Rectangle
+        | undefined;
+      if (hpBarBg?.active && hpBarFill?.active) {
+        const maxHp = (enemy.getData('maxHp') as number) ?? 1;
+        const hp = (enemy.getData('hp') as number) ?? 1;
+        const ratio = Phaser.Math.Clamp(hp / maxHp, 0, 1);
+        const barWidth = ENEMY.width * scale * ENEMY.hpBarWidthRatio;
+        const barHeight = ENEMY.hpBarHeight * scale;
+        const barY = enemy.y - ENEMY.height * scale * ENEMY.hpBarOffsetRatio;
+        hpBarBg.setPosition(enemy.x, barY);
+        hpBarBg.setSize(barWidth, barHeight);
+        hpBarBg.setDepth(depth + 0.06);
+        hpBarFill.setPosition(enemy.x - barWidth / 2, barY);
+        hpBarFill.setSize(barWidth * ratio, barHeight);
+        hpBarFill.setDepth(depth + 0.07);
       }
       const shadow = enemy.getData('shadow') as
         | Phaser.GameObjects.Ellipse

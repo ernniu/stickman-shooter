@@ -15,13 +15,13 @@ export const PLAYER = {
   // 玩家边界内缩半宽 = width * halfWidthRatio，用于把整个火柴人约束在跑道内。
   halfWidthRatio: 0.35,
   // 编队：跟随成员相对中心的横向间距 / 每行纵向落差 / 贴阵平滑系数
-  squadSpread: gameUnits(150),
+  squadSpread: gameUnits(170),
   squadYOffset: gameUnits(60),
   squadLerp: 14,
   // 编队上限（1~5 人）；武器等级 = 编队人数，上限自动取此值
   maxSquadSize: 5,
   // 仅视觉放大（碰撞体仍按 width/height 计算，手感与判定不变）
-  displayScale: 1.15,
+  displayScale: 1.22,
 } as const;
 
 export const BULLET = {
@@ -52,8 +52,12 @@ export const ENEMY = {
   swingAmplitude: gameUnits(34),
   swingSpeed: 2.2,
   hpFontSize: 44,
-  hpTextOffsetRatio: 0.72,
+  hpTextOffsetRatio: 0.95,
   hpPopScale: 1.35,
+  // 头顶小血条（贴敌人头顶，数字在其上方）
+  hpBarWidthRatio: 0.55,
+  hpBarHeight: gameUnits(12),
+  hpBarOffsetRatio: 0.62,
   // 击杀掉落金币：弹出后飞向右上角 HUD
   coinSize: gameUnits(96),
   coinDropMin: 1,
@@ -83,7 +87,7 @@ export const FEEDBACK = {
 export const PROGRESS = {
   wavesPerLevel: 5,
   marginX: gameUnits(70),
-  barWidth: gameUnits(22),
+  barWidth: gameUnits(14),
   topRatio: 0.16,
   heightRatio: 0.34,
   fillColor: 0x22c55e,
@@ -95,15 +99,22 @@ export const RUNWAY = {
   dashSpacing: gameUnits(360),
   scrollSpeed: gameUnits(560),
   dashInset: gameUnits(70),
-  lineWidth: gameUnits(16),
-  lineAlpha: 0.38,
+  lineWidth: gameUnits(20),
+  lineAlpha: 0.9,
   sideWidth: gameUnits(56),
   stripeHeight: gameUnits(260),
+  // 灰白实体赛道配色（参考图风格）
+  roadColor: 0xd8dfe8,
+  roadEdgeColor: 0x33465c,
+  roadEdgeAlpha: 0.9,
+  stripeColor: 0xc9d3de,
+  stripeAlpha: 0.55,
+  edgeHighlightAlpha: 0.9,
   // 中间横向速度线：比虚线更细更淡、滚动更快，避免跑道中部太空
   speedLineSpacing: gameUnits(150),
   speedLineSpeedRatio: 1.7,
   speedLineWidthRatio: 0.42,
-  speedLineAlpha: 0.14,
+  speedLineAlpha: 0.24,
   // 伪 3D 透视：跑道随 y 由窄变宽（顶部更窄，透视更明显）
   perspectiveTopY: 0,
   perspectiveBottomY: 1,
@@ -150,13 +161,13 @@ export const RAGE = {
   // 叠加后的总时长上限（狂暴中再次触发会延时，但不超过此值）
   maxStackMs: 8000,
   fireIntervalMs: 145,
-  // 子弹视觉：叠加暖黄高光并略微放大
-  bulletTint: 0xffd54a,
-  bulletScale: 1.15,
+  // 子弹视觉：叠加金橙高光并放大
+  bulletTint: 0xffb020,
+  bulletScale: 1.25,
   // 脚下光圈
-  auraColor: 0xffd54a,
-  auraAlpha: 0.3,
-  auraScale: 1.2,
+  auraColor: 0xffb020,
+  auraAlpha: 0.34,
+  auraScale: 1.25,
   pulseMs: 420,
 } as const;
 
@@ -186,10 +197,10 @@ export const GATE = {
   // 生成高度（相对 GAME_HEIGHT）：偏上方，留出反应时间，此处跑道宽度仍够容纳两扇门
   spawnYRatio: 0.08,
   // 尺寸（相对 GAME_WIDTH / GAME_HEIGHT）
-  widthRatio: 0.26,
-  heightRatio: 0.075,
+  widthRatio: 0.3,
+  heightRatio: 0.095,
   gapRatio: 0.06,
-  fontSize: 56,
+  fontSize: 72,
   // 呼吸动画
   pulseScale: 1.05,
   pulseMs: 620,
@@ -210,7 +221,7 @@ export const GATE_REWARDS: Record<GateKind, GateReward> = {
     score: 0,
   },
   coin: {
-    label: '+20金币',
+    label: '+20',
     toast: '金币+20',
     color: 0xfacc15,
     squad: 0,
@@ -218,7 +229,7 @@ export const GATE_REWARDS: Record<GateKind, GateReward> = {
     score: 0,
   },
   score: {
-    label: '+100分',
+    label: '+100',
     toast: '分数+100',
     color: 0xa78bfa,
     squad: 0,

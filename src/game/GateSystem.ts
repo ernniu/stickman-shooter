@@ -170,7 +170,17 @@ export class GateSystem {
   ): Gate {
     const reward = GATE_REWARDS[kind];
     const board = this.scene.add.graphics();
-    board.fillStyle(reward.color, 0.92);
+    // 投影：偏移的深色圆角矩形，制造立体感
+    board.fillStyle(0x0f172a, 0.35);
+    board.fillRoundedRect(
+      -width / 2 + gameUnits(8),
+      -height / 2 + gameUnits(14),
+      width,
+      height,
+      Math.min(height / 2, width / 2),
+    );
+    // 门体
+    board.fillStyle(reward.color, 0.95);
     board.fillRoundedRect(
       -width / 2,
       -height / 2,
@@ -178,13 +188,23 @@ export class GateSystem {
       height,
       Math.min(height / 2, width / 2),
     );
-    board.lineStyle(gameUnits(5), 0xffffff, 0.9);
+    // 厚描边
+    board.lineStyle(gameUnits(10), 0xffffff, 0.95);
     board.strokeRoundedRect(
       -width / 2,
       -height / 2,
       width,
       height,
       Math.min(height / 2, width / 2),
+    );
+    // 顶部高光条
+    board.fillStyle(0xffffff, 0.28);
+    board.fillRoundedRect(
+      -width / 2 + gameUnits(14),
+      -height / 2 + gameUnits(12),
+      width - gameUnits(28),
+      gameUnits(16),
+      gameUnits(8),
     );
 
     const label = this.scene.add

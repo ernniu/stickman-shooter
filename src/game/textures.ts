@@ -108,28 +108,35 @@ export const ensureGameTextures = (scene: Phaser.Scene): void => {
     drawStickman(ctx, '#e5484d', true);
   });
 
-  ensureCanvasTexture(scene, TEX.bullet, 36, 72, (ctx) => {
-    // 粉色光弹：上亮弹头 + 向下渐隐的三角尾焰（参照效果图的弹幕观感）。
-    const gradient = ctx.createLinearGradient(0, 10, 0, 72);
-    gradient.addColorStop(0, 'rgba(249, 168, 212, 0.9)');
-    gradient.addColorStop(0.5, 'rgba(244, 114, 182, 0.45)');
-    gradient.addColorStop(1, 'rgba(244, 114, 182, 0)');
+  ensureCanvasTexture(scene, TEX.bullet, 56, 112, (ctx) => {
+    // 外发光柔光晕
+    const glow = ctx.createRadialGradient(28, 30, 4, 28, 30, 26);
+    glow.addColorStop(0, 'rgba(255, 224, 248, 0.95)');
+    glow.addColorStop(1, 'rgba(255, 138, 194, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, 56, 60);
+
+    // 向下渐隐的长尾焰
+    const gradient = ctx.createLinearGradient(0, 16, 0, 112);
+    gradient.addColorStop(0, 'rgba(255, 182, 224, 1)');
+    gradient.addColorStop(0.45, 'rgba(255, 138, 194, 0.6)');
+    gradient.addColorStop(1, 'rgba(255, 138, 194, 0)');
     ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.moveTo(8, 14);
-    ctx.lineTo(28, 14);
-    ctx.lineTo(21, 72);
-    ctx.lineTo(15, 72);
+    ctx.moveTo(12, 20);
+    ctx.lineTo(44, 20);
+    ctx.lineTo(34, 112);
+    ctx.lineTo(22, 112);
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = '#f472b6';
+    ctx.fillStyle = '#ff8ac2';
     ctx.beginPath();
-    ctx.arc(18, 18, 15, 0, Math.PI * 2);
+    ctx.arc(28, 28, 22, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 1)';
     ctx.beginPath();
-    ctx.arc(18, 14, 8, 0, Math.PI * 2);
+    ctx.arc(28, 22, 12, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -313,7 +320,7 @@ export class CloudField {
 
 type Vec = { x: number; y: number };
 
-/** 云端跑道（透视梯形）：上窄下宽 + 护栏阴影带 + 明暗条纹 + 边缘白线。 */
+/** 云端跑道（透视梯形）：灰白实体路面 + 深色厚边 + 白色高光线 + 明暗条纹。 */
 export const drawRunway = (
   scene: Phaser.Scene,
 ): { laneLeft: number; laneRight: number } => {
@@ -330,17 +337,17 @@ export const drawRunway = (
     rightEdge.push({ x: bounds.right, y: yAt(index) });
   }
 
-  // 两侧护栏阴影带（沿透视边缘的斜带，伪厚度）
+  // 两侧深色厚边（沿透视边缘的斜带）
   const buildBand = (edge: Vec[], outward: number): Vec[] => [
     ...edge,
     ...[...edge].reverse().map((point) => ({ x: point.x + outward, y: point.y })),
   ];
-  graphics.fillStyle(0x1e3a5f, 0.45);
+  graphics.fillStyle(RUNWAY.roadEdgeColor, RUNWAY.roadEdgeAlpha);
   graphics.fillPoints(buildBand(leftEdge, -RUNWAY.sideWidth), true);
   graphics.fillPoints(buildBand(rightEdge, RUNWAY.sideWidth), true);
 
-  // 路面（梯形）
-  graphics.fillStyle(0xffffff, 0.18);
+  // 路面（灰白实体梯形）
+  graphics.fillStyle(RUNWAY.roadColor, 1);
   graphics.fillPoints([...leftEdge, ...[...rightEdge].reverse()], true);
 
   // 明暗交替条纹：每格为一段梯形，随透视变宽
@@ -355,7 +362,7 @@ export const drawRunway = (
     const yNext = Math.min(y + RUNWAY.stripeHeight, GAME_HEIGHT);
     const near = getLaneBoundsAtY(y);
     const far = getLaneBoundsAtY(yNext);
-    graphics.fillStyle(0xffffff, 0.1);
+    graphics.fillStyle(RUNWAY.stripeColor, RUNWAY.stripeAlpha);
     graphics.fillPoints(
       [
         { x: near.left + gameUnits(10), y },
@@ -367,10 +374,23 @@ export const drawRunway = (
     );
   }
 
-  // 边缘白实线（跟随透视斜边）
-  graphics.lineStyle(gameUnits(10), 0xffffff, 0.75);
+  // 外侧深色边线（厚）+ 内侧白色高光线（细），强化立体感
+  graphics.lineStyle(gameUnits(12), RUNWAY.roadEdgeColor, RUNWAY.roadEdgeAlpha);
   graphics.strokePoints(leftEdge, false);
   graphics.strokePoints(rightEdge, false);
+  graphics.lineStyle(
+    gameUnits(5),
+    0xffffff,
+    RUNWAY.edgeHighlightAlpha,
+  );
+  graphics.strokePoints(
+    leftEdge.map((point) => ({ x: point.x + gameUnits(16), y: point.y })),
+    false,
+  );
+  graphics.strokePoints(
+    rightEdge.map((point) => ({ x: point.x - gameUnits(16), y: point.y })),
+    false,
+  );
 
   const bottom = getLaneBoundsAtY(GAME_HEIGHT);
   return { laneLeft: bottom.left, laneRight: bottom.right };
@@ -392,11 +412,11 @@ export const drawDangerLine = (
     0xff4d4f,
     0,
     0,
-    0.26,
-    0.26,
+    0.18,
+    0.18,
   );
   graphics.fillRect(0, y, GAME_WIDTH, GAME_HEIGHT - y);
-  graphics.lineStyle(gameUnits(6), 0xff4d4f, 0.55);
+  graphics.lineStyle(gameUnits(6), 0xff4d4f, 0.45);
   const dashWidth = gameUnits(96);
   const dashGap = gameUnits(72);
   for (let x = laneLeft; x < laneRight; x += dashWidth + dashGap) {
