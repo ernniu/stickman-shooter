@@ -29,7 +29,6 @@ import {
 } from '@/game/perspective';
 import {
   CloudField,
-  COIN_TEXTURE_SIZE,
   OPTIONAL_TEX,
   TEX,
   addSkyBackground,
@@ -1225,9 +1224,8 @@ export class GameScene extends Phaser.Scene {
   /** 击杀掉落金币：弹出后飞向右上角金币 HUD，入账时数字弹一下。 */
   private spawnCoins(x: number, y: number): void {
     const count = Phaser.Math.Between(ENEMY.coinDropMin, ENEMY.coinDropMax);
-    const targetScale =
-      (ENEMY.coinSize / COIN_TEXTURE_SIZE) * getPerspectiveScaleAtY(y);
     const coinTexture = resolveTexture(this, 'coin', TEX.coin);
+    const displaySize = ENEMY.coinSize * getPerspectiveScaleAtY(y);
     for (let index = 0; index < count; index += 1) {
       const coin = this.add
         .image(
@@ -1235,11 +1233,12 @@ export class GameScene extends Phaser.Scene {
           y + Phaser.Math.Between(-gameUnits(24), gameUnits(24)),
           coinTexture,
         )
+        .setDisplaySize(displaySize, displaySize)
         .setDepth(getDepthAtY(y) + 0.3)
         .setScale(0);
       this.tweens.add({
         targets: coin,
-        scale: targetScale,
+        scale: 1,
         duration: 90,
         delay: index * 45,
         ease: 'Back.out',

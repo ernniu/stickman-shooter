@@ -11,7 +11,7 @@ import {
 import { markEditable } from '@/utils';
 
 import { HUD, POWER_UP, PROGRESS } from './gameConfig';
-import { TEX } from './textures';
+import { TEX, resolveTexture } from './textures';
 import { FONT_FAMILY, drawHudPill } from './ui';
 
 /** HUD 渲染所需的只读视图数据（由 GameScene 传入）。 */
