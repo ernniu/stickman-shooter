@@ -9,7 +9,9 @@ import {
   PLAYER,
   PLAYER_Y,
   POWER_UP,
+  RAGE,
   RUNWAY,
+  SQUAD_FORMATION,
   enemyCountForWave,
   enemyHpForWave,
   enemySpeedForWave,
@@ -48,12 +50,7 @@ import {
 
 type GameState = 'ready' | 'playing' | 'over';
 
-/** 编队阵型：玩家本体是中心成员，跟随成员的横向偏移按编队人数展开。 */
-const FOLLOWER_DX: Record<number, readonly number[]> = {
-  1: [],
-  2: [PLAYER.squadSpread],
-  3: [-PLAYER.squadSpread, PLAYER.squadSpread],
-};
+
 
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
@@ -86,6 +83,9 @@ export class GameScene extends Phaser.Scene {
   private spawnedThisWave = 0;
   // 敌人摆动用的累积时间（只驱动轻微左右摆动，不影响下落速度）
   private swingTime = 0;
+  // 狂暴射击：rageEndsAt 之前处于狂暴状态（更快的射击间隔 + 增强视觉）
+  private rageEndsAt = 0;
+  private rageWasActive = false;
   // 手指拖动：只跟踪第一根手指；dragOffsetX 记录按下瞬间玩家与手指的相对偏移。
   private pointerId: number | null = null;
   private dragOffsetX = 0;
@@ -110,6 +110,8 @@ export class GameScene extends Phaser.Scene {
     this.waveTotal = 0;
     this.spawnedThisWave = 0;
     this.swingTime = 0;
+    this.rageEndsAt = 0;
+    this.rageWasActive = false;
     this.gates.reset();
     this.fireTimer = undefined;
     this.spawnTimer = undefined;
@@ -250,12 +252,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.readyLayer = [];
 
-    this.fireTimer = this.time.addEvent({
-      delay: BULLET.fireIntervalMs,
-      loop: true,
-      callback: this.fire,
-      callbackScope: this,
-    });
+    this.refreshFireTimer();
     this.startWave(this.wave);
   }
 
@@ -263,9 +260,16 @@ export class GameScene extends Phaser.Scene {
     const playerTexture = resolveTexture(this, 'player', TEX.player);
     this.player = this.physics.add
       .sprite(GAME_CENTER_X, PLAYER_Y, playerTexture)
-      .setDisplaySize(PLAYER.width, PLAYER.height)
+      .setDisplaySize(
+        PLAYER.width * PLAYER.displayScale,
+        PLAYER.height * PLAYER.displayScale,
+      )
       .setDepth(getDepthAtY(PLAYER_Y));
     this.setBodySize(this.player, PLAYER.width * 0.72, PLAYER.height * 0.9);
+    this.player.setData(
+      'aura',
+      this.createAura(PLAYER.width * PLAYER.displayScale),
+    );
     this.player.setImmovable(true);
     // 自定义素材为单帧，不播放程序化跑步动画
     if (playerTexture === TEX.player) {
@@ -510,10 +514,70 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private isRaging(): boolean {
+    return this.time.now < this.rageEndsAt;
+  }
+
+  /** 触发狂暴：剩余时长 +5 秒，总时长不超过上限；并按新状态重建开火定时器。 */
+  private startRage(): void {
+    const now = this.time.now;
+    const remaining = Math.max(0, this.rageEndsAt - now);
+    const stacked = Math.min(remaining + RAGE.durationMs, RAGE.maxStackMs);
+    this.rageEndsAt = now + stacked;
+    this.refreshFireTimer();
+  }
+
+  /** 按当前狂暴状态重建开火定时器（基础间隔 / 狂暴间隔）。 */
+  private refreshFireTimer(): void {
+    this.fireTimer?.remove();
+    this.fireTimer = this.time.addEvent({
+      delay: this.isRaging() ? RAGE.fireIntervalMs : BULLET.fireIntervalMs,
+      loop: true,
+      callback: this.fire,
+      callbackScope: this,
+    });
+  }
+
+  /** 狂暴脚下光圈：跟随成员位置，激活时可见并呼吸；未激活隐藏。 */
+  private updateAuras(raging: boolean): void {
+    const pulse =
+      1 + Math.sin((this.time.now / RAGE.pulseMs) * Math.PI) * 0.12;
+    const members: Array<[Phaser.Physics.Arcade.Sprite, number]> = [
+      [this.player, PLAYER.width * PLAYER.displayScale],
+      ...this.squadFollowers.map(
+        (follower) =>
+          [follower, PLAYER.width * PLAYER.displayScale] as [
+            Phaser.Physics.Arcade.Sprite,
+            number,
+          ],
+      ),
+    ];
+    for (const [member, width] of members) {
+      if (!member.active) {
+        continue;
+      }
+      const aura = member.getData('aura') as
+        | Phaser.GameObjects.Arc
+        | undefined;
+      if (!aura?.active) {
+        continue;
+      }
+      if (!raging) {
+        aura.setVisible(false);
+        continue;
+      }
+      aura.setVisible(true);
+      aura.setPosition(member.x, member.y + member.displayHeight * 0.55);
+      aura.setScale(pulse * RAGE.auraScale);
+      aura.setDepth(getDepthAtY(member.y) - 0.08);
+    }
+  }
+
   private fire(): void {
     if (this.state !== 'playing') {
       return;
     }
+    const raging = this.isRaging();
     const muzzleOffsetY = PLAYER.height * PLAYER.displayScale * 0.42;
     for (const member of [this.player, ...this.squadFollowers]) {
       if (!member.active) {
@@ -526,13 +590,23 @@ export class GameScene extends Phaser.Scene {
         bulletTexture,
       ) as Phaser.Physics.Arcade.Sprite;
       bullet
-        .setDisplaySize(BULLET.size, BULLET.size * 2)
+        .setDisplaySize(
+          BULLET.size * BULLET.displayScale,
+          BULLET.size * BULLET.displayScale * 2,
+        )
         .setDepth(getDepthAtY(member.y - muzzleOffsetY) + 0.6);
+      if (raging) {
+        // 狂暴：子弹加暖黄高光并略微放大（只影响视觉）
+        bullet.setTint(RAGE.bulletTint);
+        bullet.setScale(bullet.scaleX * RAGE.bulletScale);
+      }
+      // 显示放大后仍需保证“实际碰撞尺寸 = BULLET.size”，按最终缩放反算源尺寸
+      const bulletScale = bullet.scaleX || 1;
       if (bulletTexture === TEX.bullet) {
         // 程序化纹理：上半弹头、下半尾焰，碰撞体只取弹头区域
         (bullet.body as Phaser.Physics.Arcade.Body).setSize(
-          BULLET.size,
-          BULLET.size,
+          BULLET.size / bulletScale,
+          BULLET.size / bulletScale,
           false,
         );
       } else {
@@ -722,9 +796,9 @@ export class GameScene extends Phaser.Scene {
           }
         });
       } else {
-        // 编队已满：转为金币/分数奖励，避免门“无效果”
+        // 编队已满：+1人 门转为狂暴射击，并附少量金币
+        this.startRage();
         this.coins += GATE.squadFullCoins;
-        this.score += GATE.squadFullScore;
         this.hud.setCoins(this.coins, true);
         toast = GATE.squadFullToast;
       }
@@ -762,6 +836,18 @@ export class GameScene extends Phaser.Scene {
     if (this.state !== 'playing') {
       return;
     }
+    // 狂暴状态：进入/退出时切换开火间隔，同步脚下光圈与 HUD
+    const raging = this.isRaging();
+    if (raging !== this.rageWasActive) {
+      this.rageWasActive = raging;
+      this.refreshFireTimer();
+    }
+    this.updateAuras(raging);
+    this.hud.setRage(
+      raging,
+      raging ? this.rageEndsAt - this.time.now : 0,
+      RAGE.maxStackMs,
+    );
     this.swingTime += deltaSeconds;
     this.handleMovement(deltaSeconds);
     this.playerShadow?.setPosition(
@@ -841,21 +927,34 @@ export class GameScene extends Phaser.Scene {
     body.setSize(width / scaleX, height / scaleY, true);
   }
 
+  /** 狂暴脚下光圈（平时隐藏，由 updateAuras 控制显隐与呼吸）。 */
+  private createAura(width: number): Phaser.GameObjects.Arc {
+    return this.add
+      .circle(0, 0, width / 2, RAGE.auraColor, RAGE.auraAlpha)
+      .setDepth(getDepthAtY(PLAYER_Y) - 0.08)
+      .setVisible(false);
+  }
+
+  /** 当前编队等级对应的跟随者阵位（dx 为 squadSpread 的倍数，row 为行号）。 */
+  private squadSlots(): ReadonlyArray<{
+    readonly dx: number;
+    readonly row: number;
+  }> {
+    const level = Phaser.Math.Clamp(this.weaponLevel, 1, PLAYER.maxSquadSize);
+    return SQUAD_FORMATION[level] ?? [];
+  }
+
   /** 按当前编队等级补建跟随成员（等级只升不降，无需销毁逻辑）。 */
   private syncSquad(): void {
-    const level = Phaser.Math.Clamp(
-      this.weaponLevel,
-      1,
-      POWER_UP.maxWeaponLevel,
-    );
-    const dxs = FOLLOWER_DX[level] ?? [];
-    while (this.squadFollowers.length < dxs.length) {
+    const slots = this.squadSlots();
+    while (this.squadFollowers.length < slots.length) {
       const index = this.squadFollowers.length;
+      const slot = slots[index];
       const followerTexture = resolveTexture(this, 'player', TEX.player);
       const follower = this.physics.add
         .sprite(
-          this.player.x + dxs[index],
-          PLAYER_Y + PLAYER.squadYOffset,
+          this.player.x + slot.dx * PLAYER.squadSpread,
+          PLAYER_Y + PLAYER.squadYOffset * slot.row,
           followerTexture,
         )
         .setDisplaySize(
@@ -875,6 +974,10 @@ export class GameScene extends Phaser.Scene {
       );
       shadow.setPosition(follower.x, follower.y + PLAYER.height * 0.44);
       follower.setData('shadow', shadow);
+      follower.setData(
+        'aura',
+        this.createAura(PLAYER.width * PLAYER.displayScale),
+      );
       markEditable(`game.squad-member-${index + 1}`, follower, {
         label: '编队成员',
       });
@@ -899,16 +1002,12 @@ export class GameScene extends Phaser.Scene {
 
   /** 跟随成员平滑贴向阵位（略滞后于本体，形成编队弹性）。 */
   private updateSquadFormation(deltaSeconds: number): void {
-    const level = Phaser.Math.Clamp(
-      this.weaponLevel,
-      1,
-      POWER_UP.maxWeaponLevel,
-    );
-    const dxs = FOLLOWER_DX[level] ?? [];
+    const slots = this.squadSlots();
     const smoothing = 1 - Math.exp(-PLAYER.squadLerp * deltaSeconds);
     this.squadFollowers.forEach((follower, index) => {
+      const slot = slots[index];
       const targetX = this.clampToLane(
-        this.player.x + (dxs[index] ?? 0),
+        this.player.x + (slot?.dx ?? 0) * PLAYER.squadSpread,
         follower.y,
       );
       follower.x += (targetX - follower.x) * smoothing;

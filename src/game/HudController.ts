@@ -37,6 +37,8 @@ export class HudController {
   /** 金币图标基准缩放：脉冲动画以此为准，避免多次叠加导致越放越大 */
   private coinIconBaseScale = 1;
   private progressBar?: Phaser.GameObjects.Graphics;
+  private rageText?: Phaser.GameObjects.Text;
+  private rageBar?: Phaser.GameObjects.Graphics;
 
   constructor(private readonly scene: Phaser.Scene) {}
 
@@ -138,6 +140,20 @@ export class HudController {
         .setStroke('#0f172a', gameUnits(10))
         .setShadow(0, gameUnits(4), 'rgba(15, 23, 42, 0.55)', gameUnits(6));
     }
+
+    // 狂暴状态提示（默认隐藏，setRage 控制显隐与进度）
+    this.rageText = this.scene.add
+      .text(GAME_CENTER_X, HUD.y + gameUnits(215), '狂暴', {
+        fontFamily: FONT_FAMILY,
+        fontSize: gamePixels(64),
+        color: '#fde047',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setStroke('#7c2d12', gameUnits(8))
+      .setDepth(10)
+      .setVisible(false);
+    this.rageBar = this.scene.add.graphics().setDepth(12).setVisible(false);
   }
 
   update(view: HudView): void {
@@ -180,6 +196,35 @@ export class HudController {
   /** 金币飞行的终点（HUD 金币图标位置）。 */
   get coinTarget(): { x: number; y: number } {
     return { x: this.coinIcon.x, y: this.coinIcon.y };
+  }
+
+  /** 狂暴状态 HUD：文字 + 剩余时间进度条（位于中间面板下方，不遮挡战斗区）。 */
+  setRage(active: boolean, remainMs: number, maxMs: number): void {
+    if (!this.rageText || !this.rageBar) {
+      return;
+    }
+    this.rageText.setVisible(active);
+    this.rageBar.setVisible(active);
+    if (!active) {
+      return;
+    }
+    const ratio = maxMs > 0 ? Phaser.Math.Clamp(remainMs / maxMs, 0, 1) : 0;
+    const bar = this.rageBar;
+    bar.clear();
+    const width = gameUnits(260);
+    const height = gameUnits(16);
+    const x = GAME_CENTER_X - width / 2;
+    const yPos = HUD.y + gameUnits(258);
+    bar.fillStyle(0x0f172a, 0.45);
+    bar.fillRoundedRect(x, yPos, width, height, height / 2);
+    bar.fillStyle(0xf59e0b, 0.95);
+    bar.fillRoundedRect(
+      x,
+      yPos,
+      width * ratio,
+      height,
+      Math.min(height / 2, (width * ratio) / 2),
+    );
   }
 
   /** 关卡进度：每 wavesPerLevel 波一关，填充 = 已完成波 + 当前波击杀占比。 */

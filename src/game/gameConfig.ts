@@ -14,10 +14,12 @@ export const PLAYER = {
   followLerp: 12,
   // 玩家边界内缩半宽 = width * halfWidthRatio，用于把整个火柴人约束在跑道内。
   halfWidthRatio: 0.35,
-  // 编队：跟随成员相对中心的横向间距 / 纵向落差 / 贴阵平滑系数
+  // 编队：跟随成员相对中心的横向间距 / 每行纵向落差 / 贴阵平滑系数
   squadSpread: gameUnits(150),
   squadYOffset: gameUnits(60),
   squadLerp: 14,
+  // 编队上限（1~5 人）；武器等级 = 编队人数，上限自动取此值
+  maxSquadSize: 5,
   // 仅视觉放大（碰撞体仍按 width/height 计算，手感与判定不变）
   displayScale: 1.15,
 } as const;
@@ -115,6 +117,49 @@ export const RUNWAY = {
   depthRange: 8,
 } as const;
 
+/**
+ * 编队阵型：本体为中心，跟随成员按 dx（squadSpread 的倍数）与 row（行号）排成 V 字/扇形。
+ * 下标 = 编队人数（1~maxSquadSize），数组长度 = 跟随者数量（人数 - 1）。
+ */
+export const SQUAD_FORMATION: Record<
+  number,
+  ReadonlyArray<{ readonly dx: number; readonly row: number }>
+> = {
+  1: [],
+  2: [{ dx: 0.7, row: 1 }],
+  3: [
+    { dx: -0.7, row: 1 },
+    { dx: 0.7, row: 1 },
+  ],
+  4: [
+    { dx: -1.1, row: 1 },
+    { dx: 1.1, row: 1 },
+    { dx: 0, row: 2 },
+  ],
+  5: [
+    { dx: -1.35, row: 1 },
+    { dx: 1.35, row: 1 },
+    { dx: -0.7, row: 2 },
+    { dx: 0.7, row: 2 },
+  ],
+};
+
+/** 狂暴射击：满编队后触发的爆发状态（更快的射击 + 更强的视觉）。 */
+export const RAGE = {
+  durationMs: 5000,
+  // 叠加后的总时长上限（狂暴中再次触发会延时，但不超过此值）
+  maxStackMs: 8000,
+  fireIntervalMs: 145,
+  // 子弹视觉：叠加暖黄高光并略微放大
+  bulletTint: 0xffd54a,
+  bulletScale: 1.15,
+  // 脚下光圈
+  auraColor: 0xffd54a,
+  auraAlpha: 0.3,
+  auraScale: 1.2,
+  pulseMs: 420,
+} as const;
+
 /** 增益门类型（第一版只做正向增益，不做惩罚门）。 */
 export type GateKind = 'squad' | 'coin' | 'score';
 
@@ -151,7 +196,7 @@ export const GATE = {
   // 编队已满时“+1人”门转换成的奖励
   squadFullCoins: 20,
   squadFullScore: 0,
-  squadFullToast: '编队已满 +20金币',
+  squadFullToast: '狂暴射击！',
 } as const;
 
 /** 每种门的奖励：编队 +1 / 金币 +20 / 分数 +100。 */
@@ -196,7 +241,8 @@ export const POWER_UP = {
   size: gameUnits(160),
   speed: gameUnits(320),
   dropEveryWaves: 2,
-  maxWeaponLevel: 3,
+  // 武器等级 = 编队人数，上限与编队上限保持一致（单一真源）
+  maxWeaponLevel: PLAYER.maxSquadSize,
   maxedBonusScore: 50,
 } as const;
 
