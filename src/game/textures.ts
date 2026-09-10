@@ -335,7 +335,7 @@ export const drawRunway = (
     ...edge,
     ...[...edge].reverse().map((point) => ({ x: point.x + outward, y: point.y })),
   ];
-  graphics.fillStyle(0x274b73, 0.3);
+  graphics.fillStyle(0x1e3a5f, 0.45);
   graphics.fillPoints(buildBand(leftEdge, -RUNWAY.sideWidth), true);
   graphics.fillPoints(buildBand(rightEdge, RUNWAY.sideWidth), true);
 
@@ -355,7 +355,7 @@ export const drawRunway = (
     const yNext = Math.min(y + RUNWAY.stripeHeight, GAME_HEIGHT);
     const near = getLaneBoundsAtY(y);
     const far = getLaneBoundsAtY(yNext);
-    graphics.fillStyle(0xffffff, 0.07);
+    graphics.fillStyle(0xffffff, 0.1);
     graphics.fillPoints(
       [
         { x: near.left + gameUnits(10), y },
@@ -384,11 +384,21 @@ export const drawDangerLine = (
   laneRight: number,
 ): void => {
   const graphics = scene.add.graphics().setDepth(-5);
-  graphics.fillStyle(0xff4d4f, 0.1);
+  // 半透明渐变警戒区：越靠底部越红，替代原来的“调试线”观感
+  graphics.fillGradientStyle(
+    0xff4d4f,
+    0xff4d4f,
+    0xff4d4f,
+    0xff4d4f,
+    0,
+    0,
+    0.26,
+    0.26,
+  );
   graphics.fillRect(0, y, GAME_WIDTH, GAME_HEIGHT - y);
-  graphics.lineStyle(gameUnits(10), 0xff4d4f, 0.9);
-  const dashWidth = gameUnits(64);
-  const dashGap = gameUnits(44);
+  graphics.lineStyle(gameUnits(6), 0xff4d4f, 0.55);
+  const dashWidth = gameUnits(96);
+  const dashGap = gameUnits(72);
   for (let x = laneLeft; x < laneRight; x += dashWidth + dashGap) {
     graphics.lineBetween(x, y, Math.min(x + dashWidth, laneRight), y);
   }

@@ -56,9 +56,9 @@ export class HudController {
     drawHudPill(
       this.scene,
       GAME_CENTER_X,
-      HUD.y + gameUnits(55),
-      gameUnits(380),
-      gameUnits(310),
+      HUD.y + gameUnits(45),
+      gameUnits(320),
+      gameUnits(250),
     );
     drawHudPill(
       this.scene,
@@ -123,6 +123,18 @@ export class HudController {
 
     this.progressBar = this.scene.add.graphics().setDepth(12);
     markEditable('game.hud-progress', this.progressBar, { label: '关卡进度条' });
+
+    // 统一加强文字描边与投影，保证在跑道/云海上都清晰可读
+    for (const text of [
+      this.scoreText,
+      this.waveText,
+      this.weaponText,
+      this.coinText,
+    ]) {
+      text
+        .setStroke('#0f172a', gameUnits(10))
+        .setShadow(0, gameUnits(4), 'rgba(15, 23, 42, 0.55)', gameUnits(6));
+    }
   }
 
   update(view: HudView): void {

@@ -19,6 +19,7 @@ import { RunwayRenderer } from '@/game/RunwayRenderer';
 import {
   getDepthAtY,
   getLaneBoundsAtY,
+  getLaneHalfWidthAtY,
   getPerspectiveScaleAtY,
 } from '@/game/perspective';
 import {
@@ -77,6 +78,8 @@ export class GameScene extends Phaser.Scene {
   private weaponLevel = 1;
   private waveTotal = 0;
   private spawnedThisWave = 0;
+  // 敌人摆动用的累积时间（只驱动轻微左右摆动，不影响下落速度）
+  private swingTime = 0;
   // 手指拖动：只跟踪第一根手指；dragOffsetX 记录按下瞬间玩家与手指的相对偏移。
   private pointerId: number | null = null;
   private dragOffsetX = 0;
@@ -100,6 +103,7 @@ export class GameScene extends Phaser.Scene {
     this.weaponLevel = 1;
     this.waveTotal = 0;
     this.spawnedThisWave = 0;
+    this.swingTime = 0;
     this.fireTimer = undefined;
     this.spawnTimer = undefined;
     this.nextWaveTimer = undefined;
@@ -393,19 +397,32 @@ export class GameScene extends Phaser.Scene {
     if (this.state !== 'playing') {
       return;
     }
-    // 生成范围取该 y 深度处的透视跑道（顶部较窄），不再使用固定左右边界。
-    const spawnBounds = getLaneBoundsAtY(ENEMY.spawnTopY);
-    const margin = RUNWAY.perspectiveInset + ENEMY.width * 0.4;
-    const spawnX = Phaser.Math.Between(
-      spawnBounds.left + margin,
-      spawnBounds.right - margin,
+    // 阵型：按本波序号分配横向车道 + 抖动；纵向随机错开，避免单列排队
+    const laneCount = Math.max(1, ENEMY.formationLanes);
+    const laneIndex = this.spawnedThisWave % laneCount;
+    const jitterU = Phaser.Math.FloatBetween(-0.06, 0.06);
+    const laneU = Phaser.Math.Clamp(
+      ((laneIndex + 0.5) / laneCount) * 1.5 - 0.75 + jitterU,
+      -0.75,
+      0.75,
+    );
+    const spawnY =
+      ENEMY.spawnTopY - ENEMY.height * ENEMY.spawnJitterRatio * Math.random();
+    const spawnBounds = getLaneBoundsAtY(spawnY);
+    const edge = ENEMY.width * 0.45;
+    const spawnX = Phaser.Math.Clamp(
+      GAME_CENTER_X + laneU * getLaneHalfWidthAtY(spawnY) * 0.92,
+      spawnBounds.left + edge,
+      spawnBounds.right - edge,
     );
     const enemyTexture = resolveTexture(this, 'enemy', TEX.enemy);
     const enemy = this.enemies.create(
       spawnX,
-      ENEMY.spawnTopY,
+      spawnY,
       enemyTexture,
     ) as Phaser.Physics.Arcade.Sprite;
+    enemy.setData('laneU', laneU);
+    enemy.setData('swingPhase', Math.random() * Math.PI * 2);
     enemy
       .setDisplaySize(ENEMY.width, ENEMY.height)
       .setDepth(getDepthAtY(ENEMY.spawnTopY));
@@ -423,9 +440,9 @@ export class GameScene extends Phaser.Scene {
     }
     const shadow = this.createShadow(
       ENEMY.width * 0.95,
-      getDepthAtY(ENEMY.spawnTopY) - 0.05,
+      getDepthAtY(spawnY) - 0.05,
     );
-    shadow.setPosition(spawnX, ENEMY.spawnTopY + ENEMY.height * 0.44);
+    shadow.setPosition(spawnX, spawnY + ENEMY.height * 0.44);
     enemy.setData('shadow', shadow);
 
     // 头顶血量数字：跟随敌人下落，受击时逐发扣减。
@@ -434,7 +451,7 @@ export class GameScene extends Phaser.Scene {
     const hpText = addGameText(
       this,
       spawnX,
-      ENEMY.spawnTopY - ENEMY.height * ENEMY.hpTextOffsetRatio,
+      spawnY - ENEMY.height * ENEMY.hpTextOffsetRatio,
       String(hp),
       {
         fontFamily: FONT_FAMILY,
@@ -445,7 +462,7 @@ export class GameScene extends Phaser.Scene {
     )
       .setOrigin(0.5)
       .setStroke('#7f1d1d', gameUnits(6))
-      .setDepth(getDepthAtY(ENEMY.spawnTopY) + 0.1);
+      .setDepth(getDepthAtY(spawnY) + 0.1);
     enemy.setData('hpText', hpText);
 
     this.spawnedThisWave += 1;
@@ -486,7 +503,7 @@ export class GameScene extends Phaser.Scene {
     if (this.state !== 'playing') {
       return;
     }
-    const muzzleOffsetY = PLAYER.height * 0.52;
+    const muzzleOffsetY = PLAYER.height * PLAYER.displayScale * 0.42;
     for (const member of [this.player, ...this.squadFollowers]) {
       if (!member.active) {
         continue;
@@ -696,6 +713,7 @@ export class GameScene extends Phaser.Scene {
     if (this.state !== 'playing') {
       return;
     }
+    this.swingTime += deltaSeconds;
     this.handleMovement(deltaSeconds);
     this.playerShadow?.setPosition(
       this.player.x,
@@ -754,7 +772,7 @@ export class GameScene extends Phaser.Scene {
     depth: number,
   ): Phaser.GameObjects.Ellipse {
     return this.add
-      .ellipse(0, 0, width, width * 0.3, 0x10253a, 0.28)
+      .ellipse(0, 0, width, width * 0.3, 0x10253a, 0.36)
       .setDepth(depth);
   }
 
@@ -790,7 +808,10 @@ export class GameScene extends Phaser.Scene {
           PLAYER_Y + PLAYER.squadYOffset,
           followerTexture,
         )
-        .setDisplaySize(PLAYER.width, PLAYER.height)
+        .setDisplaySize(
+          PLAYER.width * PLAYER.displayScale,
+          PLAYER.height * PLAYER.displayScale,
+        )
         .setDepth(getDepthAtY(PLAYER_Y + PLAYER.squadYOffset));
       this.setBodySize(follower, PLAYER.width * 0.72, PLAYER.height * 0.9);
       follower.setImmovable(true);
@@ -923,8 +944,24 @@ export class GameScene extends Phaser.Scene {
       }
       const scale = getPerspectiveScaleAtY(enemy.y);
       const baseScale = (enemy.getData('baseScale') as number) ?? 1;
-      // 正在播放受击放大动画的敌人不覆盖其 scale，避免 tween 被每帧重置。
-      if (enemy.getData('dying') !== true) {
+      const isDying = enemy.getData('dying') === true;
+      // 沿透视车道下落 + 轻微左右摆动：只改 x，不影响下落速度与难度
+      if (!isDying) {
+        const laneU = (enemy.getData('laneU') as number) ?? 0;
+        const phase = (enemy.getData('swingPhase') as number) ?? 0;
+        const halfWidth = getLaneHalfWidthAtY(enemy.y);
+        const swing =
+          (Math.sin(this.swingTime * ENEMY.swingSpeed + phase) *
+            ENEMY.swingAmplitude) /
+          Math.max(halfWidth, 1);
+        const bounds = getLaneBoundsAtY(enemy.y);
+        const edge = ENEMY.width * 0.45;
+        enemy.x = Phaser.Math.Clamp(
+          GAME_CENTER_X + (laneU + swing) * halfWidth * 0.92,
+          bounds.left + edge,
+          bounds.right - edge,
+        );
+        // 正在播放受击放大动画的敌人不覆盖其 scale，避免 tween 被每帧重置。
         enemy.setScale(baseScale * scale);
       }
       const depth = getDepthAtY(enemy.y);

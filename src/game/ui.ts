@@ -149,7 +149,7 @@ export const drawHudPill = (
     height,
     height / 2,
   );
-  pill.lineStyle(gameUnits(3), 0xffffff, 0.28);
+  pill.lineStyle(gameUnits(3), 0xffffff, 0.35);
   pill.strokeRoundedRect(
     centerX - width / 2,
     centerY - height / 2,

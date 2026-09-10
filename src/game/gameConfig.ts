@@ -18,12 +18,16 @@ export const PLAYER = {
   squadSpread: gameUnits(150),
   squadYOffset: gameUnits(60),
   squadLerp: 14,
+  // 仅视觉放大（碰撞体仍按 width/height 计算，手感与判定不变）
+  displayScale: 1.15,
 } as const;
 
 export const BULLET = {
   speed: gameUnits(2600),
-  // 弹体尺寸（宽 = size，高 = size × 2，含尾焰）；碰撞体同步按此缩放
+  // size 同时决定碰撞体尺寸（保持不变，不改射击判定）
   size: gameUnits(36),
+  // 仅视觉放大倍数：显示 = size × displayScale，碰撞体不受影响
+  displayScale: 1.5,
   fireIntervalMs: 300,
 } as const;
 
@@ -40,6 +44,11 @@ export const ENEMY = {
   // 血量：第 n 波 = baseHp + floor((n-1)/hpWaveStep)，子弹每发扣 1
   baseHp: 2,
   hpWaveStep: 2,
+  // 阵型与摆动：只影响观感，不改下落速度、数量与难度
+  formationLanes: 5,
+  spawnJitterRatio: 0.6,
+  swingAmplitude: gameUnits(34),
+  swingSpeed: 2.2,
   hpFontSize: 44,
   hpTextOffsetRatio: 0.72,
   hpPopScale: 1.35,
@@ -84,14 +93,19 @@ export const RUNWAY = {
   dashSpacing: gameUnits(360),
   scrollSpeed: gameUnits(560),
   dashInset: gameUnits(70),
-  lineWidth: gameUnits(12),
-  lineAlpha: 0.2,
-  sideWidth: gameUnits(40),
+  lineWidth: gameUnits(16),
+  lineAlpha: 0.38,
+  sideWidth: gameUnits(56),
   stripeHeight: gameUnits(260),
-  // 伪 3D 透视：跑道随 y 由窄变宽
+  // 中间横向速度线：比虚线更细更淡、滚动更快，避免跑道中部太空
+  speedLineSpacing: gameUnits(150),
+  speedLineSpeedRatio: 1.7,
+  speedLineWidthRatio: 0.42,
+  speedLineAlpha: 0.14,
+  // 伪 3D 透视：跑道随 y 由窄变宽（顶部更窄，透视更明显）
   perspectiveTopY: 0,
   perspectiveBottomY: 1,
-  topWidthRatio: 0.4,
+  topWidthRatio: 0.3,
   bottomWidthRatio: 0.78,
   perspectiveInset: gameUnits(40),
   // 透视缩放范围（远处 → 近处）
@@ -130,7 +144,7 @@ export const HUD = {
   marginX: gameUnits(64),
   y: gameUnits(150),
   fontSize: 72,
-  pillHeight: gameUnits(132),
+  pillHeight: gameUnits(118),
 } as const;
 
 export const BEST_STORAGE_KEY = 'cloud-stickman-shooter-best-v1';

@@ -13,6 +13,7 @@ import { drawRunway } from './textures';
 export class RunwayRenderer {
   private dashes?: Phaser.GameObjects.Graphics;
   private offset = 0;
+  private speedOffset = 0;
 
   constructor(private readonly scene: Phaser.Scene) {}
 
@@ -31,7 +32,39 @@ export class RunwayRenderer {
     }
     const spacing = RUNWAY.dashSpacing;
     this.offset = (this.offset + RUNWAY.scrollSpeed * deltaSeconds) % spacing;
+    const lineSpacing = RUNWAY.speedLineSpacing;
+    this.speedOffset =
+      (this.speedOffset +
+        RUNWAY.scrollSpeed * RUNWAY.speedLineSpeedRatio * deltaSeconds) %
+      lineSpacing;
     graphics.clear();
+
+    // 横向速度线：更细更淡、滚动更快，填补跑道中部空白
+    graphics.lineStyle(
+      RUNWAY.lineWidth * 0.35,
+      0xffffff,
+      RUNWAY.speedLineAlpha,
+    );
+    for (
+      let y = this.speedOffset - lineSpacing;
+      y < GAME_HEIGHT;
+      y += lineSpacing
+    ) {
+      if (y < 0) {
+        continue;
+      }
+      const halfWidth = getLaneHalfWidthAtY(y);
+      const t = getPerspectiveT(y);
+      const width =
+        halfWidth * 2 * RUNWAY.speedLineWidthRatio * (0.6 + 0.4 * t);
+      graphics.lineBetween(
+        GAME_CENTER_X - width / 2,
+        y,
+        GAME_CENTER_X + width / 2,
+        y,
+      );
+    }
+
     for (let y = this.offset - spacing; y < GAME_HEIGHT; y += spacing) {
       if (y < 0) {
         continue;
