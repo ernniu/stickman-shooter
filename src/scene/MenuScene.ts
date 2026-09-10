@@ -8,7 +8,7 @@ import {
   ensureGameTextures,
 } from '@/game/textures';
 import { FONT_FAMILY, createGameButton } from '@/game/ui';
-import { GIT_VERSION } from '@/version';
+import { APP_VERSION } from '@/version';
 import {
   GAME_CENTER_X,
   GAME_HEIGHT,
@@ -100,12 +100,12 @@ export class MenuScene extends Phaser.Scene {
         .setDepth(5);
     }
 
-    // 构建版本号（git 短 hash），便于线上问题定位
+    // 应用版本号（package.json version），便于线上问题定位
     addGameText(
       this,
       GAME_CENTER_X,
       GAME_HEIGHT - gameUnits(110),
-      `v${GIT_VERSION}`,
+      `v${APP_VERSION}`,
       {
         fontFamily: FONT_FAMILY,
         fontSize: gamePixels(42),
