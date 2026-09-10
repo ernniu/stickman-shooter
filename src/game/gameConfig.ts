@@ -132,13 +132,14 @@ export interface GateReward {
 /** 跑道增益门（选择门）配置：尺寸、节奏、奖励全部集中在此。 */
 export const GATE = {
   // 生成节奏：从 startWave 开始，每 everyWaves 波一组，且两组间隔不小于 minIntervalMs
-  startWave: 2,
+  // 注意：道具在偶数波生成，门取奇数波（3/5/7…），两者错开，避免同屏元素冲突
+  startWave: 3,
   everyWaves: 2,
   minIntervalMs: 10000,
   // 下落速度（略慢于敌人，避免与敌群完全同步）
-  speed: gameUnits(200),
-  // 生成高度（相对 GAME_HEIGHT，负值表示屏幕上方之外）
-  spawnYRatio: -0.12,
+  speed: gameUnits(300),
+  // 生成高度（相对 GAME_HEIGHT）：取中上部，此处跑道已有足够宽度容纳两扇门
+  spawnYRatio: 0.16,
   // 尺寸（相对 GAME_WIDTH / GAME_HEIGHT）
   widthRatio: 0.26,
   heightRatio: 0.075,

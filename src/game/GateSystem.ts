@@ -11,6 +11,7 @@ import {
 import { GATE, GATE_REWARDS, type GateKind, type GateReward } from './gameConfig';
 import {
   getDepthAtY,
+  getLaneBoundsAtY,
   getLaneHalfWidthAtY,
   getPerspectiveScaleAtY,
 } from './perspective';
@@ -62,15 +63,12 @@ export class GateSystem {
     this.groups = [];
   }
 
-  /** 波次开始时按需生成一组门。 */
-  onWaveStart(wave: number, canSpawn: boolean): void {
+  /** 波次开始时按需生成一组门（波次规则已与道具错开）。 */
+  onWaveStart(wave: number): void {
     if (wave < GATE.startWave) {
       return;
     }
     if ((wave - GATE.startWave) % GATE.everyWaves !== 0) {
-      return;
-    }
-    if (!canSpawn) {
       return;
     }
     const now = this.scene.time.now;
@@ -129,11 +127,21 @@ export class GateSystem {
   private spawnGroup(): void {
     const spawnY = GAME_HEIGHT * GATE.spawnYRatio;
     const gap = GAME_WIDTH * GATE.gapRatio;
-    const maxWidth = (GAME_WIDTH - gap) / 2 - gameUnits(24);
-    const width = Math.min(GAME_WIDTH * GATE.widthRatio, maxWidth);
+    const spawnBounds = getLaneBoundsAtY(spawnY);
+    // 门宽受该 y 处跑道可用宽度限制，保证两扇门互不重叠
+    const usable = spawnBounds.width - gap - gameUnits(48);
+    const width = Math.max(
+      gameUnits(140),
+      Math.min(GAME_WIDTH * GATE.widthRatio, usable / 2),
+    );
     const height = GAME_HEIGHT * GATE.heightRatio;
     const kinds = this.pickKinds();
-    const laneUs = [-0.55, 0.55];
+    const halfWidthAtSpawn = getLaneHalfWidthAtY(spawnY);
+    const laneOffset = Math.min(
+      0.8,
+      (width + gap) / 2 / Math.max(halfWidthAtSpawn * 0.9, 1),
+    );
+    const laneUs = [-laneOffset, laneOffset];
 
     const group: Gate[] = kinds.map((kind, index) => {
       const gate = this.createGate(kind, width, height, spawnY);
@@ -194,6 +202,14 @@ export class GateSystem {
       board,
       label,
     ]);
+    // 淡入，避免门突然出现
+    container.setAlpha(0);
+    this.scene.tweens.add({
+      targets: container,
+      alpha: 1,
+      duration: 220,
+      ease: 'Quad.out',
+    });
     // 呼吸动画作用于内部元素，避免与每帧的透视缩放互相覆盖
     this.scene.tweens.add({
       targets: [board, label],
@@ -237,7 +253,7 @@ export class GateSystem {
   }
 
   private destroyGate(gate: Gate): void {
-    this.scene.tweens.killTweensOf([gate.board, gate.label]);
+    this.scene.tweens.killTweensOf([gate.board, gate.label, gate.container]);
     gate.container.destroy();
   }
 }

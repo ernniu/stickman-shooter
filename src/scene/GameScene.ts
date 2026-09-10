@@ -400,8 +400,8 @@ export class GameScene extends Phaser.Scene {
       this.spawnPowerUp();
     }
 
-    // 增益门：同屏已有道具时跳过，避免画面元素过乱
-    this.gates.onWaveStart(wave, this.powerUps.countActive(true) === 0);
+    // 增益门：生成波次（奇数波）已与道具（偶数波）错开
+    this.gates.onWaveStart(wave);
   }
 
   private spawnEnemy(): void {

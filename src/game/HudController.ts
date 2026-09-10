@@ -34,6 +34,8 @@ export class HudController {
   private weaponText!: Phaser.GameObjects.Text;
   private coinText!: Phaser.GameObjects.Text;
   private coinIcon!: Phaser.GameObjects.Image;
+  /** 金币图标基准缩放：脉冲动画以此为准，避免多次叠加导致越放越大 */
+  private coinIconBaseScale = 1;
   private progressBar?: Phaser.GameObjects.Graphics;
 
   constructor(private readonly scene: Phaser.Scene) {}
@@ -109,6 +111,7 @@ export class HudController {
       )
       .setDisplaySize(gameUnits(88), gameUnits(88))
       .setDepth(10);
+    this.coinIconBaseScale = this.coinIcon.scale;
     this.coinText = addGameText(
       this.scene,
       GAME_WIDTH - HUD.marginX - gameUnits(100),
@@ -154,6 +157,10 @@ export class HudController {
     if (!pulse) {
       return;
     }
+    // 先结束上一次脉冲并复位，再播放，避免 scale 被反复叠加放大
+    this.scene.tweens.killTweensOf([this.coinText, this.coinIcon]);
+    this.coinText.setScale(1);
+    this.coinIcon.setScale(this.coinIconBaseScale);
     this.scene.tweens.add({
       targets: this.coinText,
       scale: 1.2,
@@ -163,7 +170,7 @@ export class HudController {
     });
     this.scene.tweens.add({
       targets: this.coinIcon,
-      scale: this.coinIcon.scale * 1.2,
+      scale: this.coinIconBaseScale * 1.2,
       duration: 80,
       yoyo: true,
       ease: 'Quad.out',
