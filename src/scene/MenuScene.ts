@@ -8,6 +8,7 @@ import {
   ensureGameTextures,
 } from '@/game/textures';
 import { FONT_FAMILY, createGameButton } from '@/game/ui';
+import { GIT_VERSION } from '@/version';
 import {
   GAME_CENTER_X,
   GAME_HEIGHT,
@@ -98,6 +99,21 @@ export class MenuScene extends Phaser.Scene {
         .setStroke('#0f172a', gameUnits(6))
         .setDepth(5);
     }
+
+    // 构建版本号（git 短 hash），便于线上问题定位
+    addGameText(
+      this,
+      GAME_CENTER_X,
+      GAME_HEIGHT - gameUnits(110),
+      `v${GIT_VERSION}`,
+      {
+        fontFamily: FONT_FAMILY,
+        fontSize: gamePixels(42),
+        color: '#94a3b8',
+      },
+    )
+      .setOrigin(0.5)
+      .setDepth(5);
   }
 
   update(_time: number, delta: number): void {

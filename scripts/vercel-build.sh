@@ -5,6 +5,10 @@ echo "===== Vercel build start ====="
 echo "Current dir:"
 pwd
 
+# 注入 git 短版本号，供 vite define 写入前端（vite.config 读取 GIT_VERSION）
+export GIT_VERSION="$(git -C "$(pwd)" rev-parse --short HEAD 2>/dev/null || echo dev)"
+echo "GIT_VERSION: $GIT_VERSION"
+
 echo "Run original build script..."
 bash ./scripts/build.sh
 

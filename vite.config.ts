@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { cp } from "node:fs/promises";
 import path from "node:path";
@@ -12,6 +13,21 @@ const PHASER_BRIDGE_URL = new URL(
 PHASER_BRIDGE_URL.searchParams.set("hash", Date.now().toString());
 
 const executionRoot = import.meta.dirname;
+
+// 构建版本号：优先取构建脚本注入的 GIT_VERSION，否则就地读 git；都失败则显示 dev
+const GIT_VERSION =
+  process.env.GIT_VERSION ||
+  (() => {
+    try {
+      return execSync("git rev-parse --short HEAD", {
+        cwd: executionRoot,
+      })
+        .toString()
+        .trim();
+    } catch {
+      return "dev";
+    }
+  })();
 const sourceRoot = path.dirname(
   realpathSync(path.join(executionRoot, "src")),
 );
@@ -84,6 +100,9 @@ export default defineConfig(() => {
   const assetsDirectory = path.join(sourceRoot, "assets");
 
   return {
+    define: {
+      __GIT_VERSION__: JSON.stringify(GIT_VERSION),
+    },
     cacheDir: path.join(executionRoot, "node_modules/.vite"),
     envDir: sourceRoot,
     publicDir: path.join(sourceRoot, "public"),
