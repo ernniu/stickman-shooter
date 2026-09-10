@@ -136,10 +136,10 @@ export const GATE = {
   startWave: 3,
   everyWaves: 2,
   minIntervalMs: 10000,
-  // 下落速度（略慢于敌人，避免与敌群完全同步）
-  speed: gameUnits(300),
-  // 生成高度（相对 GAME_HEIGHT）：取中上部，此处跑道已有足够宽度容纳两扇门
-  spawnYRatio: 0.16,
+  // 下落速度：需明显大于敌人，让玩家能在几秒内等到门到达
+  speed: gameUnits(700),
+  // 生成高度（相对 GAME_HEIGHT）：偏上方，留出反应时间，此处跑道宽度仍够容纳两扇门
+  spawnYRatio: 0.08,
   // 尺寸（相对 GAME_WIDTH / GAME_HEIGHT）
   widthRatio: 0.26,
   heightRatio: 0.075,
