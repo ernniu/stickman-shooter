@@ -22,12 +22,24 @@ import {
 interface GameOverLaunchData {
   score?: number;
   wave?: number;
+  coins?: number;
+  weaponLevel?: number;
+  damageBonus?: number;
+  attackSpeedBonus?: number;
+  bossDefeated?: boolean;
+  levelComplete?: boolean;
 }
 
 export class GameOverScene extends Phaser.Scene {
   private cloudField?: CloudField;
   private score = 0;
   private wave = 1;
+  private coins = 0;
+  private weaponLevel = 1;
+  private damageBonus = 0;
+  private attackSpeedBonus = 0;
+  private bossDefeated = false;
+  private levelComplete = false;
 
   constructor() {
     super('game-over');
@@ -36,6 +48,17 @@ export class GameOverScene extends Phaser.Scene {
   init(data: GameOverLaunchData): void {
     this.score = typeof data.score === 'number' ? Math.max(0, data.score) : 0;
     this.wave = typeof data.wave === 'number' ? Math.max(1, data.wave) : 1;
+    this.coins = typeof data.coins === 'number' ? Math.max(0, data.coins) : 0;
+    this.weaponLevel =
+      typeof data.weaponLevel === 'number' ? Math.max(1, data.weaponLevel) : 1;
+    this.damageBonus =
+      typeof data.damageBonus === 'number' ? Math.max(0, data.damageBonus) : 0;
+    this.attackSpeedBonus =
+      typeof data.attackSpeedBonus === 'number'
+        ? Math.max(0, data.attackSpeedBonus)
+        : 0;
+    this.bossDefeated = data.bossDefeated === true;
+    this.levelComplete = data.levelComplete === true;
   }
 
   create(): void {
@@ -71,9 +94,15 @@ export class GameOverScene extends Phaser.Scene {
       fontStyle: 'bold',
     });
 
-    addGameText(this, GAME_CENTER_X, panelCenterY - gameUnits(700), '游戏结束', {
-      ...panelStyle(104, '#1f2937'),
-    })
+    addGameText(
+      this,
+      GAME_CENTER_X,
+      panelCenterY - gameUnits(700),
+      this.levelComplete ? '关卡完成！' : '游戏结束',
+      {
+        ...panelStyle(104, this.levelComplete ? '#16a34a' : '#1f2937'),
+      },
+    )
       .setOrigin(0.5)
       .setDepth(3);
 
@@ -96,6 +125,28 @@ export class GameOverScene extends Phaser.Scene {
     )
       .setOrigin(0.5)
       .setDepth(3);
+
+    // 关卡完成：追加成长结算（金币/装备/伤害/攻速/Boss）
+    if (this.levelComplete) {
+      const growthRows: Array<[string, string]> = [
+        ['金币', `+${this.coins}`],
+        ['最终装备', `${this.weaponLevel}/8`],
+        ['伤害加成', `+${Math.round(this.damageBonus * 100)}%`],
+        ['攻速加成', `+${Math.round(this.attackSpeedBonus * 100)}%`],
+        ['击败 Boss', this.bossDefeated ? '是' : '否'],
+      ];
+      growthRows.forEach(([label, value], index) => {
+        addGameText(
+          this,
+          GAME_CENTER_X,
+          panelCenterY - gameUnits(80) + index * gameUnits(120),
+          `${label}  ${value}`,
+          panelStyle(64, index === growthRows.length - 1 ? '#16a34a' : '#475569'),
+        )
+          .setOrigin(0.5)
+          .setDepth(3);
+      });
+    }
 
     const previousBest = readBestRecord();
     const isNewBest = !previousBest || this.score > previousBest.score;

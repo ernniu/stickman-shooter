@@ -50,6 +50,11 @@ export class NumberWallSystem {
     this.clear();
   }
 
+  /** 屏上存活墙数（关卡片段完成判定用）。 */
+  activeCount(): number {
+    return this.countActive();
+  }
+
   clear(): void {
     if (!this.group) {
       return;
@@ -199,6 +204,34 @@ export class NumberWallSystem {
 
   private countActive(): number {
     return this.group ? this.group.countActive(true) : 0;
+  }
+
+  /** 关卡片段直接生成墙（跳过概率/避让，仅保留同屏上限）。 */
+  spawnForced(
+    mode: 'none' | 'single' | 'double',
+    wave: number,
+  ): void {
+    if (mode === 'none' || this.countActive() >= NUMBER_WALL.maxOnScreen) {
+      return;
+    }
+    const baseHp = Math.min(
+      NUMBER_WALL.maxHpCap,
+      NUMBER_WALL.baseHp + NUMBER_WALL.hpPerWave * (wave - 1),
+    );
+    if (mode === 'double') {
+      const baseX =
+        GAME_CENTER_X - NUMBER_WALL.doubleLaneU * GAME_WIDTH * 0.5;
+      const offsetX = NUMBER_WALL.doubleLaneU * GAME_WIDTH * 0.5;
+      this.spawnWall(baseX, baseHp * NUMBER_WALL.doubleHpScale[0]);
+      this.spawnWall(
+        baseX + offsetX * 2,
+        baseHp * NUMBER_WALL.doubleHpScale[1],
+      );
+    } else {
+      const x =
+        GAME_CENTER_X + Phaser.Math.FloatBetween(-0.5, 0.5) * GAME_WIDTH * 0.5;
+      this.spawnWall(x, baseHp);
+    }
   }
 
   private spawnWall(x: number, hp: number): void {

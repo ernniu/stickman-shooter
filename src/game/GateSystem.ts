@@ -78,6 +78,15 @@ export class GateSystem {
     return this.groups.length > 0;
   }
 
+  /** 关卡片段直接生成一组门（跳过波次节奏，仅保留同屏一组限制）。 */
+  spawnGroupNow(): void {
+    if (this.groups.length > 0) {
+      return;
+    }
+    this.spawnGroup();
+    this.lastSpawnAt = this.scene.time.now;
+  }
+
   /** 波次开始时按需生成一组门（波次规则已与道具错开）。 */
   onWaveStart(wave: number): void {
     if (wave < GATE.startWave) {

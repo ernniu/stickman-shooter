@@ -26,6 +26,7 @@ import {
 } from '@/game/gameConfig';
 import { FxSystem } from '@/game/FxSystem';
 import { BossSystem } from '@/game/BossSystem';
+import { LevelFlowSystem } from '@/game/levelConfig';
 import { GateSystem } from '@/game/GateSystem';
 import { HudController } from '@/game/HudController';
 import { NumberWallSystem } from '@/game/NumberWallSystem';
@@ -89,6 +90,9 @@ export class GameScene extends Phaser.Scene {
     onShake: () => this.fx.shakeScreen(),
     onDefeated: () => this.onBossDefeated(),
   });
+  private readonly levelFlow = new LevelFlowSystem();
+  // 当前片段是否允许远程敌人生成（由片段配置驱动）
+  private rangedAllowed = false;
   private keys: Partial<
     Record<'LEFT' | 'RIGHT' | 'A' | 'D', Phaser.Input.Keyboard.Key>
   > = {};
@@ -147,6 +151,8 @@ export class GameScene extends Phaser.Scene {
     this.damageBonus = 0;
     this.attackSpeedBonus = 0;
     this.rangedSpawnedThisWave = 0;
+    this.rangedAllowed = false;
+    this.levelFlow.reset();
     this.gates.reset();
     this.walls.reset();
     this.boss.clear();
@@ -292,7 +298,7 @@ export class GameScene extends Phaser.Scene {
     this.readyLayer = [];
 
     this.refreshFireTimer();
-    this.startWave(this.wave);
+    this.startSegment();
   }
 
   private buildPhysicsObjects(): void {
@@ -474,68 +480,57 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private startWave(wave: number): void {
-    this.wave = wave;
-    this.waveTotal = enemyCountForWave(wave);
+  /** 按当前关卡片段执行生成（v2.6：片段驱动替代纯波次推进）。 */
+  private startSegment(): void {
+    const segment = this.levelFlow.segment;
+    // wave 保留为内部难度参数（敌人血量/速度/掉落公式使用），HUD 显示阶段进度
+    this.wave = segment.difficultyWave;
+    this.rangedAllowed = segment.allowRanged === true;
+    this.waveTotal =
+      segment.enemyCount ?? enemyCountForWave(segment.difficultyWave);
     this.spawnedThisWave = 0;
     this.rangedSpawnedThisWave = 0;
     this.updateHud();
-    this.showBanner(`第 ${wave} 波`);
+    this.showBanner(segment.hint);
 
-    this.spawnTimer = this.time.addEvent({
-      delay: ENEMY.spawnIntervalMs,
-      repeat: this.waveTotal - 1,
-      callback: this.spawnEnemy,
-      callbackScope: this,
-    });
+    if (this.waveTotal > 0) {
+      this.spawnTimer = this.time.addEvent({
+        delay: ENEMY.spawnIntervalMs,
+        repeat: this.waveTotal - 1,
+        callback: this.spawnEnemy,
+        callbackScope: this,
+      });
+    }
 
-    // 每 2 波在该波开始时掉落一个武器升级道具。
-    if (wave % POWER_UP.dropEveryWaves === 0) {
+    // 每 2 难度波掉落一个武器升级道具（保留原补给节奏）
+    if (segment.difficultyWave % POWER_UP.dropEveryWaves === 0) {
       this.spawnPowerUp();
     }
 
-    // 增益门：生成波次（奇数波）已与道具（偶数波）错开
-    this.gates.onWaveStart(wave);
-
-    // 奖励目标：概率生成，且避开屏上的门组
-    this.spawnRewardTargets(wave);
-
-    // 数字墙：概率生成，避开门组与拥挤的奖励目标
-    const crowded =
-      this.rewardBoxes.countActive(true) + this.barrels.countActive(true) >= 2;
-    this.walls.onWaveStart(wave, this.gates.hasActiveGroup(), crowded);
-  }
-
-  /** 奖励箱 / 爆炸桶的按波概率生成（频率、上限见 REWARD_BOX / BARREL 配置）。 */
-  private spawnRewardTargets(wave: number): void {
-    // 门组活动时不生成，避免与门重叠
-    if (this.gates.hasActiveGroup()) {
-      return;
+    // 成长门：片段显式配置（选择段/战斗段均可携带）
+    if (segment.gatePair) {
+      this.gates.spawnGroupNow();
     }
 
-    if (
-      wave >= REWARD_BOX.startWave &&
-      (wave - REWARD_BOX.startWave) % REWARD_BOX.everyWaves === 0 &&
-      Math.random() < REWARD_BOX.spawnChance &&
-      this.rewardBoxes.countActive(true) < REWARD_BOX.maxOnScreen
-    ) {
+    // 奖励箱 / 爆炸桶：片段显式配置
+    if (segment.rewardBox) {
       this.spawnRewardBox();
     }
-
-    if (
-      wave >= BARREL.startWave &&
-      (wave - BARREL.startWave) % BARREL.everyWaves === 0 &&
-      Math.random() < BARREL.spawnChance &&
-      this.barrels.countActive(true) < BARREL.maxOnScreen
-    ) {
-      const count = Math.min(
-        BARREL.maxOnScreen - this.barrels.countActive(true),
-        Phaser.Math.Between(BARREL.spawnMin, BARREL.spawnMax),
-      );
-      for (let index = 0; index < count; index += 1) {
-        this.spawnBarrel();
-      }
+    for (let index = 0; index < (segment.barrels ?? 0); index += 1) {
+      this.spawnBarrel();
     }
+
+    // 数字墙：片段显式配置
+    if (segment.wallsMode && segment.wallsMode !== 'none') {
+      this.walls.spawnForced(segment.wallsMode, segment.difficultyWave);
+    }
+
+    // Boss 段：无普通生成，直接开战
+    if (segment.type === 'boss') {
+      this.boss.startFight();
+    }
+
+    this.levelFlow.markSpawned();
   }
 
   /** 生成透视跑道内的目标 x 坐标（顶部外侧生成，随跑道下移）。 */
@@ -634,9 +629,9 @@ export class GameScene extends Phaser.Scene {
       spawnBounds.left + edge,
       spawnBounds.right - edge,
     );
-    // 远程敌人判定：起始波后按概率出现，每波最多 maxPerWave 个
+    // 远程敌人判定：片段允许 + 每段最多 maxPerWave 个 + 概率
     const isRanged =
-      this.wave >= RANGED_ENEMY.startWave &&
+      this.rangedAllowed &&
       this.rangedSpawnedThisWave < RANGED_ENEMY.maxPerWave &&
       Math.random() < RANGED_ENEMY.spawnChance;
     if (isRanged) {
@@ -1147,33 +1142,33 @@ export class GameScene extends Phaser.Scene {
     this.fx.deathBurst(x, y);
   }
 
+  /** 关卡片段完成检查（替代原清波推进）：完成 → 短暂间隔后进入下一段。 */
   private checkWaveCleared(): void {
     if (this.state !== 'playing') {
-      return;
-    }
-    if (this.spawnedThisWave < this.waveTotal) {
-      return;
-    }
-    if (this.enemies.countActive(true) > 0) {
       return;
     }
     if (this.nextWaveTimer) {
       return;
     }
-    // 第 startWave 波清空 → 进入 Boss 战（不再生成普通目标，直到 Boss 被击败）
-    if (this.wave === BOSS.startWave && !this.boss.fightStarted) {
-      this.showBanner('BOSS 来袭！');
-      this.boss.startFight();
-      this.updateHud();
+    if (
+      !this.levelFlow.isCompleted({
+        spawnTarget: this.waveTotal,
+        spawnedCount: this.spawnedThisWave,
+        enemiesActive: this.enemies.countActive(true),
+        gatesActive: this.gates.hasActiveGroup() ? 1 : 0,
+        boxesActive: this.rewardBoxes.countActive(true),
+        wallsActive: this.walls.activeCount(),
+      })
+    ) {
       return;
     }
-    this.showBanner('清空！');
-    this.nextWaveTimer = this.time.delayedCall(1100, () => {
+    this.levelFlow.advance();
+    this.nextWaveTimer = this.time.delayedCall(900, () => {
       this.nextWaveTimer = undefined;
       if (this.state !== 'playing') {
         return;
       }
-      this.startWave(this.wave + 1);
+      this.startSegment();
     });
   }
 
@@ -1615,7 +1610,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** Boss 被击败：固定金币/分数奖励 + 飘字，deathDelayMs 后恢复普通波次。 */
+  /** Boss 被击败：固定奖励 + 飘字，deathDelayMs 后进入关卡完成结算页。 */
   private onBossDefeated(): void {
     this.coins += BOSS.rewardCoins;
     this.score += BOSS.rewardScore;
@@ -1633,7 +1628,31 @@ export class GameScene extends Phaser.Scene {
       if (this.state !== 'playing') {
         return;
       }
-      this.startWave(this.wave + 1);
+      this.completeLevel();
+    });
+  }
+
+  /** 关卡完成：写入记录并进入结算页（不再推进普通波次）。 */
+  private completeLevel(): void {
+    this.state = 'over';
+    this.pointerId = null;
+    this.fireTimer?.remove();
+    this.spawnTimer?.remove();
+    this.nextWaveTimer?.remove();
+    this.fireTimer = undefined;
+    this.spawnTimer = undefined;
+    this.nextWaveTimer = undefined;
+    this.physics.pause();
+    this.boss.clear();
+    this.scene.start('game-over', {
+      score: this.score,
+      wave: this.wave,
+      coins: this.coins,
+      weaponLevel: this.weaponLevel,
+      damageBonus: this.damageBonus,
+      attackSpeedBonus: this.attackSpeedBonus,
+      bossDefeated: true,
+      levelComplete: true,
     });
   }
 
@@ -1851,6 +1870,7 @@ export class GameScene extends Phaser.Scene {
     this.hud.update({
       score: this.score,
       wave: this.wave,
+      stageLabel: this.levelFlow.progressLabel,
       bossFight: this.boss.isFightActive,
       weaponLevel: this.weaponLevel,
       shieldCount: this.shieldCount,
@@ -2108,7 +2128,16 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.gameOverTimer = this.time.delayedCall(950, () => {
-      this.scene.start('game-over', { score: this.score, wave: this.wave });
+      this.scene.start('game-over', {
+        score: this.score,
+        wave: this.wave,
+        coins: this.coins,
+        weaponLevel: this.weaponLevel,
+        damageBonus: this.damageBonus,
+        attackSpeedBonus: this.attackSpeedBonus,
+        bossDefeated: false,
+        levelComplete: false,
+      });
     });
   }
 }

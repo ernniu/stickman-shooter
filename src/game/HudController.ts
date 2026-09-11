@@ -18,6 +18,8 @@ import { FONT_FAMILY, drawHudPill } from './ui';
 export interface HudView {
   readonly score: number;
   readonly wave: number;
+  /** 关卡片段进度标签（如"阶段 3/8"），优先于 wave 显示。 */
+  readonly stageLabel: string;
   readonly bossFight: boolean;
   readonly weaponLevel: number;
   readonly shieldCount: number;
@@ -213,7 +215,7 @@ export class HudController {
 
   update(view: HudView): void {
     this.scoreText.setText(`分数 ${view.score}`);
-    this.waveText.setText(view.bossFight ? 'BOSS' : String(view.wave));
+    this.waveText.setText(view.bossFight ? 'BOSS' : view.stageLabel);
     const weaponLabel =
       view.weaponLevel >= EQUIPMENT.max
         ? `装备 MAX`
