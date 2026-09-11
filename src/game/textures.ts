@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-import { CLOUD_LAYERS, RUNWAY } from '@/game/gameConfig';
+import { CLOUD_LAYERS, OPEN_RUNWAY, RUNWAY } from '@/game/gameConfig';
 import { getLaneBoundsAtY } from './perspective';
 import { GAME_HEIGHT, GAME_WIDTH, gameUnits } from '@/rendering';
 
@@ -544,14 +544,45 @@ export const drawRunway = (
     rightEdge.push({ x: bounds.right, y: yAt(index) });
   }
 
-  // 两侧深色厚边（沿透视边缘的斜带）
+  // 开口段：该线以下护栏断开、边线渐隐（形成可滑出的云端赛道边缘）
+  const openY = GAME_HEIGHT * OPEN_RUNWAY.openStartYRatio;
+  const edgeUntil = (edge: Vec[], limit: number): Vec[] => {
+    const result: Vec[] = [];
+    for (const point of edge) {
+      if (point.y <= limit) {
+        result.push(point);
+      } else {
+        const prev = result[result.length - 1];
+        if (prev) {
+          const t = (limit - prev.y) / (point.y - prev.y);
+          result.push({ x: prev.x + (point.x - prev.x) * t, y: limit });
+        }
+        break;
+      }
+    }
+    return result;
+  };
+  const edgeFrom = (edge: Vec[], start: number): Vec[] => {
+    const step = GAME_HEIGHT / (edge.length - 1);
+    const index = Math.min(
+      edge.length - 1,
+      Math.max(0, Math.floor(start / step)),
+    );
+    const a = edge[index];
+    const b = edge[Math.min(index + 1, edge.length - 1)];
+    const f = (start - a.y) / Math.max(b.y - a.y, 1);
+    const head = { x: a.x + (b.x - a.x) * f, y: start };
+    return [head, ...edge.filter((point) => point.y > start)];
+  };
+
+  // 两侧深色厚边（沿透视边缘的斜带）——开口段以下断开
   const buildBand = (edge: Vec[], outward: number): Vec[] => [
     ...edge,
     ...[...edge].reverse().map((point) => ({ x: point.x + outward, y: point.y })),
   ];
   graphics.fillStyle(RUNWAY.roadEdgeColor, RUNWAY.roadEdgeAlpha);
-  graphics.fillPoints(buildBand(leftEdge, -RUNWAY.sideWidth), true);
-  graphics.fillPoints(buildBand(rightEdge, RUNWAY.sideWidth), true);
+  graphics.fillPoints(buildBand(edgeUntil(leftEdge, openY), -RUNWAY.sideWidth), true);
+  graphics.fillPoints(buildBand(edgeUntil(rightEdge, openY), RUNWAY.sideWidth), true);
 
   // 路面（灰白实体梯形）
   graphics.fillStyle(RUNWAY.roadColor, 1);
@@ -581,26 +612,48 @@ export const drawRunway = (
     );
   }
 
-  // 外侧深色边线（厚）+ 内侧白色高光线（细），强化立体感
+  // 外侧深色边线（厚）+ 内侧白色高光线（细）：开口线以上完整，以下分段渐隐
   graphics.lineStyle(gameUnits(12), RUNWAY.roadEdgeColor, RUNWAY.roadEdgeAlpha);
-  graphics.strokePoints(leftEdge, false);
-  graphics.strokePoints(rightEdge, false);
+  graphics.strokePoints(edgeUntil(leftEdge, openY), false);
+  graphics.strokePoints(edgeUntil(rightEdge, openY), false);
   graphics.lineStyle(
     gameUnits(5),
     0xffffff,
     RUNWAY.edgeHighlightAlpha,
   );
   graphics.strokePoints(
-    leftEdge.map((point) => ({ x: point.x + gameUnits(16), y: point.y })),
+    edgeUntil(leftEdge, openY).map((point) => ({ x: point.x + gameUnits(16), y: point.y })),
     false,
   );
   graphics.strokePoints(
-    rightEdge.map((point) => ({ x: point.x - gameUnits(16), y: point.y })),
+    edgeUntil(rightEdge, openY).map((point) => ({ x: point.x - gameUnits(16), y: point.y })),
     false,
   );
 
+  // 开口段边线渐隐（3 段递减），提示"这里没有护栏"
+  const fadeSegments = 3;
+  const fadeAlphas = [0.5, 0.25, 0.08];
+  for (const edge of [leftEdge, rightEdge]) {
+    for (let seg = 0; seg < fadeSegments; seg += 1) {
+      const from = openY + ((GAME_HEIGHT - openY) * seg) / fadeSegments;
+      const to = openY + ((GAME_HEIGHT - openY) * (seg + 1)) / fadeSegments;
+      graphics.lineStyle(gameUnits(12), RUNWAY.roadEdgeColor, fadeAlphas[seg]);
+      graphics.strokePoints(edgeFrom(edge, from).concat([pointAt(edge, Math.min(to, GAME_HEIGHT))]), false);
+    }
+  }
+
   const bottom = getLaneBoundsAtY(GAME_HEIGHT);
   return { laneLeft: bottom.left, laneRight: bottom.right };
+};
+
+/** 边缘采样点上按 y 线性插值取点（drawRunway 内部辅助）。 */
+const pointAt = (edge: Vec[], y: number): Vec => {
+  const step = GAME_HEIGHT / (edge.length - 1);
+  const index = Math.min(edge.length - 2, Math.max(0, Math.floor(y / step)));
+  const a = edge[index];
+  const b = edge[index + 1];
+  const f = (y - a.y) / Math.max(b.y - a.y, 1);
+  return { x: a.x + (b.x - a.x) * f, y };
 };
 
 /** 危险线：红色虚线 + 底部警示区。 */

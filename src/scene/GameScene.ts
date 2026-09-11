@@ -9,6 +9,7 @@ import {
   ENEMY_BULLET,
   EQUIPMENT,
   FEEDBACK,
+  OPEN_RUNWAY,
   GATE,
   GROWTH,
   PLAYER,
@@ -38,7 +39,9 @@ import {
   getDepthAtY,
   getLaneBoundsAtY,
   getLaneHalfWidthAtY,
+  getLaneZonesAtY,
   getPerspectiveScaleAtY,
+  type LaneZones,
 } from '@/game/perspective';
 import {
   CloudField,
@@ -131,6 +134,11 @@ export class GameScene extends Phaser.Scene {
   // 起步火力：正式开战时刻，前 STARTER_FIRE.durationMs 内基础间隔更快
   private runStartAt = 0;
   private starterWasActive = false;
+  // 开口跑道：滑出状态与坠落减员计时
+  private offRunway = false;
+  private nextFallDamageAt = 0;
+  private edgeWarnGfx?: Phaser.GameObjects.Graphics;
+  private edgeWarnDrawn = false;
   // 手指拖动：只跟踪第一根手指；dragOffsetX 记录按下瞬间玩家与手指的相对偏移。
   private pointerId: number | null = null;
   private dragOffsetX = 0;
@@ -453,9 +461,8 @@ export class GameScene extends Phaser.Scene {
     }
     this.pointerId = pointer.id;
     this.dragOffsetX = this.player.x - pointer.worldX;
-    this.targetX = this.clampToLane(
+    this.targetX = this.clampToPlayerArea(
       pointer.worldX + this.dragOffsetX,
-      this.player.y,
     );
   }
 
@@ -463,9 +470,8 @@ export class GameScene extends Phaser.Scene {
     if (this.pointerId !== pointer.id) {
       return;
     }
-    this.targetX = this.clampToLane(
+    this.targetX = this.clampToPlayerArea(
       pointer.worldX + this.dragOffsetX,
-      this.player.y,
     );
   }
 
@@ -1518,6 +1524,85 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * 开口跑道：滑出判定 + 减员节奏 + 边缘警告视觉。
+   * 只以玩家本体中心判断；伤害复用 damagePlayer（护盾/无敌/Game Over 全兼容）。
+   */
+  private updateOpenRunway(): void {
+    const zones = getLaneZonesAtY(this.player.y);
+    const centerX = this.player.x;
+    const outside = centerX < zones.fallLeft || centerX > zones.fallRight;
+    const inWarning =
+      !outside && (centerX < zones.safeLeft || centerX > zones.safeRight);
+    const now = this.time.now;
+
+    if (!outside) {
+      if (this.offRunway) {
+        // 回到跑道：立即停止坠落计时与视觉
+        this.offRunway = false;
+        this.hud.setOffRunway(false);
+        this.tweens.killTweensOf(this.player);
+        this.player.setAngle(0);
+        this.playerShadow?.setAlpha(1);
+      }
+      this.drawEdgeWarning(zones, inWarning && zones.isOpen);
+      return;
+    }
+
+    if (!this.offRunway) {
+      // 首次滑出：宽限期开始，提示 + 轻微倾抖 + 影子淡出
+      this.offRunway = true;
+      this.nextFallDamageAt = now + OPEN_RUNWAY.fallGraceMs;
+      this.hud.setOffRunway(true);
+      if (this.playerShadow) {
+        this.playerShadow.setAlpha(0.12);
+      }
+      this.tweens.killTweensOf(this.player);
+      this.tweens.add({
+        targets: this.player,
+        angle: { from: -3, to: 3 },
+        duration: 120,
+        yoyo: true,
+        repeat: 2,
+        onComplete: () => {
+          if (this.player.active) {
+            this.player.setAngle(0);
+          }
+        },
+      });
+    }
+
+    if (now >= this.nextFallDamageAt) {
+      // 无敌期 damagePlayer 返回 false，仅推进下次检测：无敌结束仍在跑道外会再次扣
+      this.damagePlayer('fall');
+      this.nextFallDamageAt = now + OPEN_RUNWAY.fallDamageCheckMs;
+    }
+    this.drawEdgeWarning(zones, true);
+  }
+
+  /** 边缘警告视觉：警告区/滑出时沿开口段两侧绘制橙红提示条（复用 Graphics）。 */
+  private drawEdgeWarning(zones: LaneZones, active: boolean): void {
+    if (!active) {
+      if (this.edgeWarnDrawn) {
+        this.edgeWarnGfx?.clear();
+        this.edgeWarnDrawn = false;
+      }
+      return;
+    }
+    if (!this.edgeWarnGfx) {
+      this.edgeWarnGfx = this.add.graphics().setDepth(-8.5);
+    }
+    const fromY = GAME_HEIGHT * OPEN_RUNWAY.openStartYRatio;
+    const toY = Math.min(this.player.y + PLAYER.height, GAME_HEIGHT);
+    const width = gameUnits(18);
+    const bar = this.edgeWarnGfx;
+    bar.clear();
+    bar.fillStyle(OPEN_RUNWAY.warningColor, OPEN_RUNWAY.warningAlpha);
+    bar.fillRect(zones.warnLeft - width, fromY, width, toY - fromY);
+    bar.fillRect(zones.warnRight, fromY, width, toY - fromY);
+    this.edgeWarnDrawn = true;
+  }
+
   /** 启动远程敌人周期攻击（首次开火在一个间隔之后）。 */
   private startRangedFire(enemy: Phaser.Physics.Arcade.Sprite): void {
     if (enemy.getData('fireTimer')) {
@@ -1639,6 +1724,7 @@ export class GameScene extends Phaser.Scene {
     this.updateRangedEnemies();
     this.walls.update(this.player.x, this.player.y);
     this.boss.update();
+    this.updateOpenRunway();
     this.syncPerspective();
     // 片段完成检查必须每帧执行：墙/门/箱子可能不经击杀而被销毁
     // （越线、离屏），仅靠 killEnemy 触发会卡关。
@@ -1657,9 +1743,8 @@ export class GameScene extends Phaser.Scene {
       const rightDown = this.keys.RIGHT?.isDown || this.keys.D?.isDown;
       const direction = (rightDown ? 1 : 0) - (leftDown ? 1 : 0);
       if (direction !== 0) {
-        this.targetX = this.clampToLane(
+        this.targetX = this.clampToPlayerArea(
           this.player.x + direction * PLAYER.moveSpeed * deltaSeconds,
-          this.player.y,
         );
       }
     }
@@ -1677,18 +1762,13 @@ export class GameScene extends Phaser.Scene {
     const smoothing = 1 - Math.exp(-PLAYER.followLerp * deltaSeconds);
     const maxStep = PLAYER.moveSpeed * deltaSeconds;
     const step = Phaser.Math.Clamp(distance * smoothing, -maxStep, maxStep);
-    this.player.x = this.clampToLane(this.player.x + step, this.player.y);
+    this.player.x = this.clampToPlayerArea(this.player.x + step);
   }
 
-  /** 把角色约束在该 y 深度处的透视跑道内，两侧各留出半个身位避免压线。 */
-  private clampToLane(x: number, y: number): number {
-    const bounds = getLaneBoundsAtY(y);
-    const halfWidth = PLAYER.width * PLAYER.halfWidthRatio;
-    return Phaser.Math.Clamp(
-      x,
-      bounds.left + halfWidth,
-      bounds.right - halfWidth,
-    );
+  /** 玩家活动范围：允许滑出跑道，仅限制不出屏幕（开口跑道机制）。 */
+  private clampToPlayerArea(x: number): number {
+    const margin = OPEN_RUNWAY.screenEdgeMargin;
+    return Phaser.Math.Clamp(x, margin, GAME_WIDTH - margin);
   }
 
   /** 角色脚下椭圆投影：压在跑道色块上，让角色"站得住"。 */
@@ -1856,6 +1936,7 @@ export class GameScene extends Phaser.Scene {
   private completeLevel(): void {
     this.state = 'over';
     this.pointerId = null;
+    this.hud.setOffRunway(false);
     this.fireTimer?.remove();
     this.spawnTimer?.remove();
     this.nextWaveTimer?.remove();
@@ -1897,15 +1978,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * 装备受伤入口：本体或任意成员被敌人接触时调用。
+   * 装备受伤入口：本体或任意成员被敌人接触、滑出跑道时调用。
    * 优先消耗护盾 → 其次损失一个装备（移除最外侧跟随成员）→ 只剩本体时 Game Over。
+   * @returns 是否实际造成损耗（false = 无效或处于无敌期）
    */
-  private damagePlayer(): void {
+  private damagePlayer(
+    source: 'contact' | 'fall' = 'contact',
+  ): boolean {
     if (this.state !== 'playing') {
-      return;
+      return false;
     }
     if (this.time.now < this.invincibleUntil) {
-      return;
+      return false;
     }
 
     // 1. 护盾优先抵伤
@@ -1917,11 +2001,11 @@ export class GameScene extends Phaser.Scene {
         this,
         this.player.x,
         this.player.y - PLAYER.height * PLAYER.displayScale,
-        '护盾抵挡！',
+        source === 'fall' ? '护盾抵挡！快回来！' : '护盾抵挡！',
         '#7dd3fc',
         { pop: true },
       );
-      return;
+      return true;
     }
 
     // 2. 还有跟随成员：损失一个装备（最后加入 = 最外侧阵位）
@@ -1934,12 +2018,20 @@ export class GameScene extends Phaser.Scene {
       this.syncSquad();
       this.startInvincibility();
       this.updateHud();
-      floatText(this, lostX, lostY, '-1 装备', '#fca5a5', { pop: true });
-      return;
+      floatText(
+        this,
+        lostX,
+        lostY,
+        source === 'fall' ? '滑出跑道！-1 装备' : '-1 装备',
+        '#fca5a5',
+        { pop: true },
+      );
+      return true;
     }
 
     // 3. 只剩本体：Game Over
     this.gameOver();
+    return true;
   }
 
   /** 受伤后的短暂无敌：全员半透明闪烁，期间不重复扣装备。 */
@@ -2002,9 +2094,8 @@ export class GameScene extends Phaser.Scene {
     const smoothing = 1 - Math.exp(-PLAYER.squadLerp * deltaSeconds);
     this.squadFollowers.forEach((follower, index) => {
       const slot = slots[index];
-      const targetX = this.clampToLane(
+      const targetX = this.clampToPlayerArea(
         this.player.x + (slot?.dx ?? 0) * PLAYER.squadSpread,
-        follower.y,
       );
       follower.x += (targetX - follower.x) * smoothing;
       const shadow = follower.getData('shadow') as
@@ -2302,6 +2393,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.state = 'over';
     this.pointerId = null;
+    this.hud.setOffRunway(false);
     // Game Over：Boss 战相关对象全部清理（血条/子弹/timer/预警 tween）
     this.boss.clear();
     this.fireTimer?.remove();

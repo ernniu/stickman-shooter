@@ -1,6 +1,6 @@
 import { GAME_CENTER_X, GAME_HEIGHT, GAME_WIDTH } from '@/rendering';
 
-import { RUNWAY } from './gameConfig';
+import { OPEN_RUNWAY, RUNWAY } from './gameConfig';
 
 /**
  * 伪 3D 透视：只影响视觉与边界计算，不参与任何玩法数值判定。
@@ -62,3 +62,36 @@ export const getPerspectiveScaleAtY = (y: number): number =>
  */
 export const getDepthAtY = (y: number): number =>
   getPerspectiveT(y) * RUNWAY.depthRange;
+
+export interface LaneZones {
+  /** 该 y 是否处于开口段（护栏断开，可滑出）。 */
+  readonly isOpen: boolean;
+  readonly safeLeft: number;
+  readonly safeRight: number;
+  readonly warnLeft: number;
+  readonly warnRight: number;
+  readonly fallLeft: number;
+  readonly fallRight: number;
+}
+
+/**
+ * 开口跑道的三区边界：安全区（内缩）→ 警告区 → 坠落判定（视觉边缘外扩）。
+ * 仅开口段（openStartY 之下）允许滑出；上方仍按视觉边缘硬性看待。
+ */
+export const getLaneZonesAtY = (y: number): LaneZones => {
+  const bounds = getLaneBoundsAtY(y);
+  const half = bounds.width / 2;
+  const isOpen = y >= GAME_HEIGHT * OPEN_RUNWAY.openStartYRatio;
+  const safeInset = half * OPEN_RUNWAY.safeInsetRatio;
+  const warnZone = half * OPEN_RUNWAY.warningZoneRatio;
+  const fallOutset = half * OPEN_RUNWAY.fallOutsetRatio;
+  return {
+    isOpen,
+    safeLeft: bounds.left + safeInset,
+    safeRight: bounds.right - safeInset,
+    warnLeft: bounds.left - warnZone,
+    warnRight: bounds.right + warnZone,
+    fallLeft: bounds.left - fallOutset,
+    fallRight: bounds.right + fallOutset,
+  };
+};

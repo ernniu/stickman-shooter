@@ -397,6 +397,30 @@ export const STARTER_FIRE = {
   baseIntervalMs: 220,
 } as const;
 
+/**
+ * 开口跑道：下半段左右护栏断开，玩家可滑出并按节奏掉装备。
+ * 区域划分（按该 y 处跑道半宽比例）：
+ *   safe（安全区，边缘内缩）→ warn（警告区）→ 视觉边缘 → fall（坠落判定外扩）
+ */
+export const OPEN_RUNWAY = {
+  /** 开口起始 y（屏幕高度比例）：该线以下跑道边缘逐渐断开。 */
+  openStartYRatio: 0.5,
+  /** 安全区相对跑道半宽的内缩比例。 */
+  safeInsetRatio: 0.05,
+  /** 警告区宽度（相对跑道半宽），超出安全区即进入警告。 */
+  warningZoneRatio: 0.12,
+  /** 坠落判定：视觉边缘再外扩的比例（宽容一点）。 */
+  fallOutsetRatio: 0.02,
+  /** 首次滑出到第一次掉装备的宽限。 */
+  fallGraceMs: 400,
+  /** 跑道外伤害检测间隔（含无敌轮询）。 */
+  fallDamageCheckMs: 900,
+  warningColor: 0xf97316,
+  warningAlpha: 0.4,
+  /** 玩家可滑出的屏幕横向留边（不出屏）。 */
+  screenEdgeMargin: gameUnits(80),
+} as const;
+
 /** 跑道增益门（选择门）配置：尺寸、节奏、奖励全部集中在此。 */
 export const GATE = {
   // 生成节奏：从 startWave 开始，每 everyWaves 波一组，且两组间隔不小于 minIntervalMs
