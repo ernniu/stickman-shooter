@@ -79,12 +79,19 @@ export class GateSystem {
   }
 
   /** 关卡片段直接生成一组门（跳过波次节奏，仅保留同屏一组限制）。 */
-  spawnGroupNow(): void {
+  spawnGroupNow(segmentId?: number): void {
     if (this.groups.length > 0) {
       return;
     }
     this.spawnGroup();
     this.lastSpawnAt = this.scene.time.now;
+    if (segmentId !== undefined) {
+      for (const group of this.groups) {
+        for (const gate of group) {
+          gate.container.setData('segmentId', segmentId);
+        }
+      }
+    }
   }
 
   /** 波次开始时按需生成一组门（波次规则已与道具错开）。 */

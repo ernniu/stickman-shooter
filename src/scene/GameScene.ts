@@ -26,7 +26,7 @@ import {
 } from '@/game/gameConfig';
 import { FxSystem } from '@/game/FxSystem';
 import { BossSystem } from '@/game/BossSystem';
-import { LevelFlowSystem } from '@/game/levelConfig';
+import { LEVEL_FLOW, LevelFlowSystem } from '@/game/levelConfig';
 import { GateSystem } from '@/game/GateSystem';
 import { HudController } from '@/game/HudController';
 import { NumberWallSystem } from '@/game/NumberWallSystem';
@@ -483,6 +483,10 @@ export class GameScene extends Phaser.Scene {
   /** 按当前关卡片段执行生成（v2.6：片段驱动替代纯波次推进）。 */
   private startSegment(): void {
     const segment = this.levelFlow.segment;
+    const segmentId = this.levelFlow.segmentId;
+    if (import.meta.env.DEV) {
+      console.info(`[Level] Segment ${segmentId} start: ${segment.type}`);
+    }
     // wave 保留为内部难度参数（敌人血量/速度/掉落公式使用），HUD 显示阶段进度
     this.wave = segment.difficultyWave;
     this.rangedAllowed = segment.allowRanged === true;
@@ -491,7 +495,6 @@ export class GameScene extends Phaser.Scene {
     this.spawnedThisWave = 0;
     this.rangedSpawnedThisWave = 0;
     this.updateHud();
-    this.showBanner(segment.hint);
 
     if (this.waveTotal > 0) {
       this.spawnTimer = this.time.addEvent({
@@ -509,7 +512,7 @@ export class GameScene extends Phaser.Scene {
 
     // 成长门：片段显式配置（选择段/战斗段均可携带）
     if (segment.gatePair) {
-      this.gates.spawnGroupNow();
+      this.gates.spawnGroupNow(segmentId);
     }
 
     // 奖励箱 / 爆炸桶：片段显式配置
@@ -522,7 +525,7 @@ export class GameScene extends Phaser.Scene {
 
     // 数字墙：片段显式配置
     if (segment.wallsMode && segment.wallsMode !== 'none') {
-      this.walls.spawnForced(segment.wallsMode, segment.difficultyWave);
+      this.walls.spawnForced(segment.wallsMode, segment.difficultyWave, segmentId);
     }
 
     // Boss 段：无普通生成，直接开战
@@ -531,6 +534,32 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.levelFlow.markSpawned();
+  }
+
+  /**
+   * 片段收口：清理不应残留到下一段的对象（敌弹/过期箱子）。
+   * 不清敌人（完成判定已保证清空或按规则等待）、不清金币/飘字等结算反馈。
+   */
+  private cleanupSegmentRemnants(previousSegmentType: string): void {
+    // 残留敌方子弹：一律清空（敌弹不应跨片段伤害玩家）
+    for (const child of [...this.enemyBullets.getChildren()]) {
+      (child as Phaser.Physics.Arcade.Sprite).destroy();
+    }
+    // reward 段宽限超时：残留箱子直接清理（不给奖励）
+    if (previousSegmentType === 'reward') {
+      for (const child of [...this.rewardBoxes.getChildren()]) {
+        const box = child as Phaser.Physics.Arcade.Sprite;
+        if (!box.active) {
+          continue;
+        }
+        const shadow = box.getData('shadow') as
+          | Phaser.GameObjects.Ellipse
+          | undefined;
+        this.tweens.killTweensOf(box);
+        box.destroy();
+        shadow?.destroy();
+      }
+    }
   }
 
   /** 生成透视跑道内的目标 x 坐标（顶部外侧生成，随跑道下移）。 */
@@ -556,6 +585,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(getDepthAtY(spawnY));
     box.setData('baseScale', box.scaleX);
     box.setData('hp', REWARD_BOX.hp);
+    box.setData('segmentId', this.levelFlow.segmentId);
     this.setBodySize(box, REWARD_BOX.size * REWARD_BOX.bodyRatio, REWARD_BOX.size * REWARD_BOX.bodyRatio);
     box.setVelocityY(REWARD_BOX.speed);
     const shadow = this.createShadow(
@@ -597,6 +627,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(getDepthAtY(spawnY));
     barrel.setData('baseScale', barrel.scaleX);
     barrel.setData('hp', BARREL.hp);
+    barrel.setData('segmentId', this.levelFlow.segmentId);
     this.setBodySize(barrel, BARREL.size * BARREL.bodyRatio, BARREL.size * BARREL.bodyRatio);
     barrel.setVelocityY(BARREL.speed);
     const shadow = this.createShadow(
@@ -648,6 +679,7 @@ export class GameScene extends Phaser.Scene {
     ) as Phaser.Physics.Arcade.Sprite;
     enemy.setData('laneU', laneU);
     enemy.setData('swingPhase', Math.random() * Math.PI * 2);
+    enemy.setData('segmentId', this.levelFlow.segmentId);
     enemy
       .setDisplaySize(ENEMY.width, ENEMY.height)
       .setDepth(getDepthAtY(ENEMY.spawnTopY));
@@ -1141,7 +1173,7 @@ export class GameScene extends Phaser.Scene {
     this.fx.deathBurst(x, y);
   }
 
-  /** 关卡片段完成检查（替代原清波推进）：完成 → 短暂间隔后进入下一段。 */
+  /** 关卡片段完成检查（替代原清波推进）：完成 → 收口 → 缓冲 → 下一段。 */
   private checkWaveCleared(): void {
     if (this.state !== 'playing') {
       return;
@@ -1157,12 +1189,21 @@ export class GameScene extends Phaser.Scene {
         gatesActive: this.gates.hasActiveGroup() ? 1 : 0,
         boxesActive: this.rewardBoxes.countActive(true),
         wallsActive: this.walls.activeCount(),
+        now: this.time.now,
       })
     ) {
       return;
     }
+    const finishedIndex = this.levelFlow.segmentId;
+    if (import.meta.env.DEV) {
+      console.info(`[Level] Segment ${finishedIndex} complete`);
+    }
+    // 收口：清理本段残留敌弹与过期箱子（不动敌人和结算反馈）
+    this.cleanupSegmentRemnants(this.levelFlow.segment.type);
     this.levelFlow.advance();
-    this.nextWaveTimer = this.time.delayedCall(900, () => {
+    // 缓冲期提前展示下一段目标提示，玩家可继续移动/射击
+    this.showBanner(this.levelFlow.segment.hint);
+    this.nextWaveTimer = this.time.delayedCall(LEVEL_FLOW.transitionMs, () => {
       this.nextWaveTimer = undefined;
       if (this.state !== 'playing') {
         return;
@@ -1388,6 +1429,7 @@ export class GameScene extends Phaser.Scene {
     bullet
       .setDisplaySize(ENEMY_BULLET.size, ENEMY_BULLET.size)
       .setDepth(getDepthAtY(enemy.y) + 0.2);
+    bullet.setData('segmentId', this.levelFlow.segmentId);
     this.setBodySize(
       bullet,
       ENEMY_BULLET.size * ENEMY_BULLET.bodyRatio,

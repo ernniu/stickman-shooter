@@ -210,6 +210,7 @@ export class NumberWallSystem {
   spawnForced(
     mode: 'none' | 'single' | 'double',
     wave: number,
+    segmentId?: number,
   ): void {
     if (mode === 'none' || this.countActive() >= NUMBER_WALL.maxOnScreen) {
       return;
@@ -222,19 +223,20 @@ export class NumberWallSystem {
       const baseX =
         GAME_CENTER_X - NUMBER_WALL.doubleLaneU * GAME_WIDTH * 0.5;
       const offsetX = NUMBER_WALL.doubleLaneU * GAME_WIDTH * 0.5;
-      this.spawnWall(baseX, baseHp * NUMBER_WALL.doubleHpScale[0]);
+      this.spawnWall(baseX, baseHp * NUMBER_WALL.doubleHpScale[0], segmentId);
       this.spawnWall(
         baseX + offsetX * 2,
         baseHp * NUMBER_WALL.doubleHpScale[1],
+        segmentId,
       );
     } else {
       const x =
         GAME_CENTER_X + Phaser.Math.FloatBetween(-0.5, 0.5) * GAME_WIDTH * 0.5;
-      this.spawnWall(x, baseHp);
+      this.spawnWall(x, baseHp, segmentId);
     }
   }
 
-  private spawnWall(x: number, hp: number): void {
+  private spawnWall(x: number, hp: number, segmentId?: number): void {
     const spawnY = -NUMBER_WALL.height;
     const texture = resolveTexture(this.scene, 'numberWall', TEX.numberWall);
     const wall = this.physicsGroup.create(x, spawnY, texture) as
@@ -245,6 +247,9 @@ export class NumberWallSystem {
     wall.setData('baseScale', wall.scaleX);
     wall.setData('hp', hp);
     wall.setData('maxHp', hp);
+    if (segmentId !== undefined) {
+      wall.setData('segmentId', segmentId);
+    }
     (wall.body as Phaser.Physics.Arcade.Body).setSize(
       NUMBER_WALL.width * NUMBER_WALL.bodyWidthRatio,
       NUMBER_WALL.height * NUMBER_WALL.bodyHeightRatio,

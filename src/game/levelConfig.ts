@@ -59,7 +59,7 @@ export const LEVEL_1: ReadonlyArray<LevelSegment> = [
     difficultyWave: 2,
     enemyCount: 8,
     rewardBox: true,
-    completion: 'enemies-cleared',
+    completion: 'reward-resolved',
   },
   {
     type: 'gate',
@@ -93,7 +93,7 @@ export const LEVEL_1: ReadonlyArray<LevelSegment> = [
     difficultyWave: 7,
     enemyCount: 14,
     rewardBox: true,
-    completion: 'enemies-cleared',
+    completion: 'reward-resolved',
   },
   {
     type: 'gate',
@@ -112,6 +112,14 @@ export const LEVEL_1: ReadonlyArray<LevelSegment> = [
   },
 ];
 
+/** 片段节奏配置：切换缓冲与奖励箱宽限。 */
+export const LEVEL_FLOW = {
+  /** 片段完成到下一段生成的缓冲（毫秒），期间显示下一段提示。 */
+  transitionMs: 700,
+  /** reward 段：敌人清空后箱子仍在的宽限时间，超时清理残留箱并推进。 */
+  rewardGraceMs: 6000,
+} as const;
+
 /** 关卡片段查询接口：由 GameScene 注入各系统实时状态。 */
 export interface SegmentStateQuery {
   /** 本段目标敌人数与已生成数。 */
@@ -122,6 +130,8 @@ export interface SegmentStateQuery {
   readonly gatesActive: number;
   readonly boxesActive: number;
   readonly wallsActive: number;
+  /** 当前时间（毫秒，scene.time.now），用于 reward 宽限计时。 */
+  readonly now: number;
 }
 
 /**
@@ -132,10 +142,18 @@ export class LevelFlowSystem {
   private index = 0;
   /** 当前片段的生成是否已执行（防止完成判定在生成前误判）。 */
   private spawned = false;
+  /** reward 段：敌人清空但箱子仍在时的宽限起点（-1 表示未计时）。 */
+  private rewardGraceStartAt = -1;
 
   reset(): void {
     this.index = 0;
     this.spawned = false;
+    this.rewardGraceStartAt = -1;
+  }
+
+  /** 当前片段编号（1 起），用于对象归属标记。 */
+  get segmentId(): number {
+    return this.index + 1;
   }
 
   get segment(): LevelSegment {
@@ -155,17 +173,33 @@ export class LevelFlowSystem {
     if (!this.spawned) {
       return false;
     }
+    const enemiesCleared =
+      query.spawnedCount >= query.spawnTarget && query.enemiesActive === 0;
+
     switch (this.segment.completion) {
       case 'enemies-cleared':
-        return (
-          query.spawnedCount >= query.spawnTarget && query.enemiesActive === 0
-        );
+        return enemiesCleared;
       case 'gate-resolved':
-        return query.gatesActive === 0;
-      case 'reward-resolved':
-        return query.boxesActive === 0;
+        // 门被选/离屏后，仍需等本段敌人清空才推进
+        return query.gatesActive === 0 && enemiesCleared;
       case 'walls-resolved':
-        return query.wallsActive === 0;
+        // 双墙全部处理完（打破或突破）后，仍需等本段敌人清空
+        return query.wallsActive === 0 && enemiesCleared;
+      case 'reward-resolved':
+        // 敌人清空后给箱子宽限期：打破/离屏/超时三者之一才推进
+        if (!enemiesCleared) {
+          this.rewardGraceStartAt = -1;
+          return false;
+        }
+        if (query.boxesActive === 0) {
+          this.rewardGraceStartAt = -1;
+          return true;
+        }
+        if (this.rewardGraceStartAt < 0) {
+          this.rewardGraceStartAt = query.now;
+          return false;
+        }
+        return query.now - this.rewardGraceStartAt >= LEVEL_FLOW.rewardGraceMs;
       case 'boss-defeated':
         // Boss 段由 onBossDefeated 直接推进到关卡结算，不走此判定
         return false;
@@ -176,5 +210,6 @@ export class LevelFlowSystem {
   advance(): void {
     this.index = Math.min(this.index + 1, LEVEL_1.length - 1);
     this.spawned = false;
+    this.rewardGraceStartAt = -1;
   }
 }
