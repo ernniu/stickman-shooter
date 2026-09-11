@@ -715,6 +715,24 @@ export class GameScene extends Phaser.Scene {
   private killEnemy(enemy: Phaser.Physics.Arcade.Sprite): void {
     const x = enemy.x;
     const y = enemy.y;
+    this.destroyEnemySilently(enemy, x, y);
+    this.score += ENEMY.score;
+    this.updateHud();
+    this.fx.killStain(x, y);
+    this.spawnCoins(x, y);
+    floatText(this, x, y - gameUnits(80), `+${ENEMY.score}`, '#fff8dc');
+    this.checkWaveCleared();
+  }
+
+  /**
+   * 静默销毁敌人（挂载物一并清理 + 爆散反馈），不结算分数/金币/飘字。
+   * 供击杀、漏怪、碰撞消散三条路径复用。
+   */
+  private destroyEnemySilently(
+    enemy: Phaser.Physics.Arcade.Sprite,
+    x: number,
+    y: number,
+  ): void {
     const hpText = enemy.getData('hpText') as
       | Phaser.GameObjects.Text
       | undefined;
@@ -730,17 +748,11 @@ export class GameScene extends Phaser.Scene {
     this.tweens.killTweensOf(enemy);
     enemy.destroy();
     hpText?.destroy();
-    // 敌人被消灭时其脚下投影必须一并销毁，否则会永久残留成灰色椭圆阴影
+    // 敌人销毁时其脚下投影必须一并销毁，否则会永久残留成灰色椭圆阴影
     shadow?.destroy();
     hpBarBg?.destroy();
     hpBarFill?.destroy();
-    this.score += ENEMY.score;
-    this.updateHud();
     this.fx.deathBurst(x, y);
-    this.fx.killStain(x, y);
-    this.spawnCoins(x, y);
-    floatText(this, x, y - gameUnits(80), `+${ENEMY.score}`, '#fff8dc');
-    this.checkWaveCleared();
   }
 
   private checkWaveCleared(): void {
@@ -861,7 +873,13 @@ export class GameScene extends Phaser.Scene {
     if (!enemy.active || enemy.getData('dying')) {
       return;
     }
+    enemy.setData('dying', true);
+    const x = enemy.x;
+    const y = enemy.y;
+    // 是否扣装备由 damagePlayer 决定（无敌期内忽略）；敌人一律销毁，
+    // 杜绝无敌结束后同一个敌人贴着小队重复造成伤害。
     this.damagePlayer();
+    this.destroyEnemySilently(enemy, x, y);
   }
 
   update(_time: number, delta: number): void {
@@ -1178,14 +1196,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   private checkDangerLine(): void {
-    for (const child of this.enemies.getChildren()) {
+    for (const child of [...this.enemies.getChildren()]) {
       const enemy = child as Phaser.Physics.Arcade.Sprite;
-      if (!enemy.active) {
+      if (!enemy.active || enemy.getData('leaked')) {
         continue;
       }
       if (enemy.getBounds().bottom >= DANGER_LINE_Y) {
-        this.gameOver();
-        return;
+        // 漏怪：销毁敌人并按装备规则扣损（无敌期不扣），装备归零才 Game Over。
+        // 提示复用 damagePlayer 的 "-1 装备"/"护盾抵挡！"，不重复堆叠文字。
+        enemy.setData('leaked', true);
+        const x = enemy.x;
+        const y = enemy.y;
+        this.destroyEnemySilently(enemy, x, y);
+        this.damagePlayer();
       }
     }
   }
