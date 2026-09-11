@@ -33,10 +33,8 @@ interface Gate {
   height: number;
 }
 
-const GATE_KINDS: GateKind[] = ['squad', 'coin', 'score'];
-
-/** 门类型 → 可选素材槽位（rage 当前无门类型，素材仅预留）。 */
-const GATE_TEX_SLOT: Record<GateKind, OptionalTexSlot> = {
+/** 门类型 → 可选素材槽位（成长门暂无素材，走 Graphics 圆角牌兜底）。 */
+const GATE_TEX_SLOT: Partial<Record<GateKind, OptionalTexSlot>> = {
   squad: 'gateSquad',
   coin: 'gateCoin',
   score: 'gateScore',
@@ -164,14 +162,11 @@ export class GateSystem {
     this.groups.push(group);
   }
 
-  /** 随机取两种不同类型的门（保证左右有差异）。 */
+  /** 从配置的组合池随机取一组成长门（左右奖励必定不同）。 */
   private pickKinds(): GateKind[] {
-    const firstIndex = Phaser.Math.Between(0, GATE_KINDS.length - 1);
-    let secondIndex = Phaser.Math.Between(0, GATE_KINDS.length - 2);
-    if (secondIndex >= firstIndex) {
-      secondIndex += 1;
-    }
-    return [GATE_KINDS[firstIndex], GATE_KINDS[secondIndex]];
+    const pairs = GATE.growthPairs;
+    const pair = pairs[Phaser.Math.Between(0, pairs.length - 1)];
+    return [pair[0], pair[1]];
   }
 
   private createGate(
@@ -183,9 +178,10 @@ export class GateSystem {
     const reward = GATE_REWARDS[kind];
     // 优先使用门素材图（显示尺寸仍由代码控制），缺失时回退 Graphics 圆角牌
     let visual: Phaser.GameObjects.Graphics | Phaser.GameObjects.Image;
-    if (hasOptionalTexture(this.scene, GATE_TEX_SLOT[kind])) {
+    const texSlot = GATE_TEX_SLOT[kind];
+    if (texSlot && hasOptionalTexture(this.scene, texSlot)) {
       visual = this.scene.add
-        .image(0, 0, OPTIONAL_TEX[GATE_TEX_SLOT[kind]])
+        .image(0, 0, OPTIONAL_TEX[texSlot])
         .setDisplaySize(width, height);
     } else {
       const board = this.scene.add.graphics();

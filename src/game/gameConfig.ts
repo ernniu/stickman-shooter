@@ -211,8 +211,8 @@ export const RAGE = {
   pulseMs: 420,
 } as const;
 
-/** 增益门类型（第一版只做正向增益，不做惩罚门）。 */
-export type GateKind = 'squad' | 'coin' | 'score';
+/** 增益门类型：成长门（squad/damage/attackSpeed/shield）+ 保留型（coin/score，供满编转换/未来系统）。 */
+export type GateKind = 'squad' | 'damage' | 'attackSpeed' | 'shield' | 'coin' | 'score';
 
 export interface GateReward {
   /** 门牌上的文字 */
@@ -223,7 +223,25 @@ export interface GateReward {
   readonly squad: number;
   readonly coins: number;
   readonly score: number;
+  /** 伤害加成增量（比例，如 0.3 = +30%） */
+  readonly damage: number;
+  /** 攻速加成增量（比例，如 0.2 = +20%） */
+  readonly attackSpeed: number;
+  /** 护盾层数增量 */
+  readonly shield: number;
 }
+
+/** 成长强化数值：基础值 + 累积加成（不做乘法复利），全部在此调参。 */
+export const GROWTH = {
+  /** 单发子弹基础伤害（无加成时）。 */
+  baseBulletDamage: 1,
+  damagePerGate: 0.3,
+  attackSpeedPerGate: 0.2,
+  damageBonusCap: 1.5,
+  attackSpeedBonusCap: 0.8,
+  /** 攻速强化后的最小射击间隔下限（毫秒），防止定时器过快。 */
+  minFireIntervalMs: 100,
+} as const;
 
 /** 跑道增益门（选择门）配置：尺寸、节奏、奖励全部集中在此。 */
 export const GATE = {
@@ -248,9 +266,19 @@ export const GATE = {
   squadFullCoins: 20,
   squadFullScore: 0,
   squadFullToast: '狂暴射击！',
+  // 护盾门在护盾已满时的转换奖励
+  shieldFullCoins: 10,
+  shieldFullToast: '护盾已满',
+  // 成长门组合池：每次从中随机取一组，左右两扇奖励必定不同
+  growthPairs: [
+    ['squad', 'damage'],
+    ['attackSpeed', 'shield'],
+    ['squad', 'attackSpeed'],
+    ['damage', 'shield'],
+  ] as ReadonlyArray<readonly [GateKind, GateKind]>,
 } as const;
 
-/** 每种门的奖励：编队 +1 / 金币 +20 / 分数 +100。 */
+/** 每种门的奖励：装备 +1 / 伤害 +30% / 攻速 +20% / 护盾 +1；金币/分数保留给转换与未来系统。 */
 export const GATE_REWARDS: Record<GateKind, GateReward> = {
   squad: {
     label: '+1人',
@@ -259,6 +287,42 @@ export const GATE_REWARDS: Record<GateKind, GateReward> = {
     squad: 1,
     coins: 0,
     score: 0,
+    damage: 0,
+    attackSpeed: 0,
+    shield: 0,
+  },
+  damage: {
+    label: '伤害+30%',
+    toast: '伤害提升！',
+    color: 0xf87171,
+    squad: 0,
+    coins: 0,
+    score: 0,
+    damage: GROWTH.damagePerGate,
+    attackSpeed: 0,
+    shield: 0,
+  },
+  attackSpeed: {
+    label: '攻速+20%',
+    toast: '射速提升！',
+    color: 0x4ade80,
+    squad: 0,
+    coins: 0,
+    score: 0,
+    damage: 0,
+    attackSpeed: GROWTH.attackSpeedPerGate,
+    shield: 0,
+  },
+  shield: {
+    label: '护盾',
+    toast: '获得护盾！',
+    color: 0x7dd3fc,
+    squad: 0,
+    coins: 0,
+    score: 0,
+    damage: 0,
+    attackSpeed: 0,
+    shield: 1,
   },
   coin: {
     label: '+20',
@@ -267,6 +331,9 @@ export const GATE_REWARDS: Record<GateKind, GateReward> = {
     squad: 0,
     coins: 20,
     score: 0,
+    damage: 0,
+    attackSpeed: 0,
+    shield: 0,
   },
   score: {
     label: '+100',
@@ -275,6 +342,9 @@ export const GATE_REWARDS: Record<GateKind, GateReward> = {
     squad: 0,
     coins: 0,
     score: 100,
+    damage: 0,
+    attackSpeed: 0,
+    shield: 0,
   },
 };
 

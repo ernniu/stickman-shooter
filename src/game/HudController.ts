@@ -20,6 +20,8 @@ export interface HudView {
   readonly wave: number;
   readonly weaponLevel: number;
   readonly shieldCount: number;
+  readonly damageBonus: number;
+  readonly attackSpeedBonus: number;
   readonly spawnedThisWave: number;
   readonly waveTotal: number;
   readonly activeEnemies: number;
@@ -41,6 +43,7 @@ export class HudController {
   private rageText?: Phaser.GameObjects.Text;
   private rageBar?: Phaser.GameObjects.Graphics;
   private shieldText?: Phaser.GameObjects.Text;
+  private buffText?: Phaser.GameObjects.Text;
 
   constructor(private readonly scene: Phaser.Scene) {}
 
@@ -192,6 +195,19 @@ export class HudController {
       .setStroke('#0f172a', gameUnits(6))
       .setDepth(10)
       .setVisible(false);
+
+    // 成长强化信息：装备文字右侧对称位，仅在有加成时显示
+    this.buffText = this.scene.add
+      .text(GAME_CENTER_X + gameUnits(430), HUD.y + gameUnits(160), '', {
+        fontFamily: FONT_FAMILY,
+        fontSize: gamePixels(44),
+        color: '#fca5a5',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setStroke('#0f172a', gameUnits(6))
+      .setDepth(10)
+      .setVisible(false);
   }
 
   update(view: HudView): void {
@@ -203,7 +219,28 @@ export class HudController {
         : `装备 ${view.weaponLevel}/${EQUIPMENT.max}`;
     this.weaponText.setText(weaponLabel);
     this.shieldText?.setVisible(view.shieldCount > 0);
+    this.updateBuffText(view);
     this.updateProgressBar(view);
+  }
+
+  /** 成长强化一行小字：伤害+XX% 攻速+XX%，无任何加成时隐藏。 */
+  private updateBuffText(view: HudView): void {
+    if (!this.buffText) {
+      return;
+    }
+    const parts: string[] = [];
+    if (view.damageBonus > 0) {
+      parts.push(`伤害+${Math.round(view.damageBonus * 100)}%`);
+    }
+    if (view.attackSpeedBonus > 0) {
+      parts.push(`攻速+${Math.round(view.attackSpeedBonus * 100)}%`);
+    }
+    if (parts.length === 0) {
+      this.buffText.setVisible(false);
+      return;
+    }
+    this.buffText.setText(parts.join(' '));
+    this.buffText.setVisible(true);
   }
 
   /** 金币入账：更新数字并让数字与图标弹一下。 */

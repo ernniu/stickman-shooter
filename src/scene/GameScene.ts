@@ -7,6 +7,7 @@ import {
   EQUIPMENT,
   FEEDBACK,
   GATE,
+  GROWTH,
   PLAYER,
   PLAYER_Y,
   POWER_UP,
@@ -91,6 +92,9 @@ export class GameScene extends Phaser.Scene {
   // 装备生命系统：护盾层数（上限 EQUIPMENT.shieldMax）与无敌截止时间
   private shieldCount = 0;
   private invincibleUntil = 0;
+  // 成长强化：基础值 + 累积加成（非复利），上限见 GROWTH
+  private damageBonus = 0;
+  private attackSpeedBonus = 0;
   // 手指拖动：只跟踪第一根手指；dragOffsetX 记录按下瞬间玩家与手指的相对偏移。
   private pointerId: number | null = null;
   private dragOffsetX = 0;
@@ -119,6 +123,8 @@ export class GameScene extends Phaser.Scene {
     this.rageWasActive = false;
     this.shieldCount = 0;
     this.invincibleUntil = 0;
+    this.damageBonus = 0;
+    this.attackSpeedBonus = 0;
     this.gates.reset();
     this.fireTimer = undefined;
     this.spawnTimer = undefined;
@@ -551,11 +557,31 @@ export class GameScene extends Phaser.Scene {
     this.refreshFireTimer();
   }
 
-  /** 按当前狂暴状态重建开火定时器（基础间隔 / 狂暴间隔）。 */
+  /**
+   * 当前单发子弹伤害 = 基础伤害 + 累积伤害加成（加法叠加，非乘法复利）。
+   * 血量内部为浮点，头顶数字向上取整显示。
+   */
+  private currentBulletDamage(): number {
+    return GROWTH.baseBulletDamage + this.damageBonus;
+  }
+
+  /**
+   * 当前射击间隔 = 基础（或狂暴）间隔 ÷ (1 + 攻速加成)，再钳制下限。
+   * 狂暴与攻速强化同时生效：狂暴在强化后的基础上进一步取更短间隔。
+   */
+  private currentFireInterval(): number {
+    const base = this.isRaging() ? RAGE.fireIntervalMs : BULLET.fireIntervalMs;
+    return Math.max(
+      GROWTH.minFireIntervalMs,
+      Math.round(base / (1 + this.attackSpeedBonus)),
+    );
+  }
+
+  /** 按当前狂暴状态与攻速加成重建开火定时器。 */
   private refreshFireTimer(): void {
     this.fireTimer?.remove();
     this.fireTimer = this.time.addEvent({
-      delay: this.isRaging() ? RAGE.fireIntervalMs : BULLET.fireIntervalMs,
+      delay: this.currentFireInterval(),
       loop: true,
       callback: this.fire,
       callbackScope: this,
@@ -664,7 +690,7 @@ export class GameScene extends Phaser.Scene {
 
   /** 受击：扣 1 点血。非致命只闪白继续下落；致命则停顿、放大后爆炸销毁。 */
   private hitEnemy(enemy: Phaser.Physics.Arcade.Sprite): void {
-    const hp = (enemy.getData('hp') as number) - 1;
+    const hp = (enemy.getData('hp') as number) - this.currentBulletDamage();
     enemy.setData('hp', hp);
     const hpText = enemy.getData('hpText') as
       | Phaser.GameObjects.Text
@@ -680,7 +706,8 @@ export class GameScene extends Phaser.Scene {
         }
       });
       if (hpText?.active) {
-        hpText.setText(String(hp));
+        // 血量为浮点（伤害加成所致），头顶数字向上取整显示
+        hpText.setText(String(Math.ceil(hp)));
         this.tweens.add({
           targets: hpText,
           scale: ENEMY.hpPopScale,
@@ -830,6 +857,8 @@ export class GameScene extends Phaser.Scene {
   ): void {
     const color = `#${reward.color.toString(16).padStart(6, '0')}`;
     let toast = reward.toast;
+    // 护盾成功时 applyShield 自带飘字，跳过末尾的统一飘字避免重复
+    let skipToast = false;
 
     if (reward.squad > 0) {
       if (this.weaponLevel < POWER_UP.maxWeaponLevel) {
@@ -849,7 +878,31 @@ export class GameScene extends Phaser.Scene {
         this.hud.setCoins(this.coins, true);
         toast = GATE.squadFullToast;
       }
+    } else if (reward.damage > 0) {
+      // 伤害门：累积加成 + 上限钳制（加法叠加，不复利）
+      this.damageBonus = Math.min(
+        GROWTH.damageBonusCap,
+        this.damageBonus + reward.damage,
+      );
+    } else if (reward.attackSpeed > 0) {
+      // 攻速门：累积加成 + 上限钳制；重建开火定时器立即生效
+      this.attackSpeedBonus = Math.min(
+        GROWTH.attackSpeedBonusCap,
+        this.attackSpeedBonus + reward.attackSpeed,
+      );
+      this.refreshFireTimer();
+    } else if (reward.shield > 0) {
+      if (this.shieldCount >= EQUIPMENT.shieldMax) {
+        // 护盾已满：不浪费，转为少量金币
+        this.coins += GATE.shieldFullCoins;
+        this.hud.setCoins(this.coins, true);
+        toast = `${GATE.shieldFullToast} +${GATE.shieldFullCoins}金币`;
+      } else {
+        this.applyShield();
+        skipToast = true;
+      }
     } else {
+      // 保留型奖励（金币/分数门，供满编转换与未来系统使用）
       this.coins += reward.coins;
       this.score += reward.score;
       if (reward.coins > 0) {
@@ -858,7 +911,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.updateHud();
-    floatText(this, x, y - gameUnits(60), toast, color, { pop: true });
+    if (!skipToast) {
+      floatText(this, x, y - gameUnits(60), toast, color, { pop: true });
+    }
   }
 
   private onPlayerTouchedByEnemy(
@@ -909,7 +964,9 @@ export class GameScene extends Phaser.Scene {
     );
     this.updateSquadFormation(deltaSeconds);
     this.syncPerspective();
-    this.gates.update(deltaSeconds, [this.player, ...this.squadFollowers]);
+    // 门触发以玩家本体（小队中心）为准：跟随成员不单独触发，
+    // 避免 8 人编队宽度变大后同时吃到两个门。
+    this.gates.update(deltaSeconds, [this.player]);
     this.checkDangerLine();
     this.cullOffscreenObjects();
   }
@@ -1257,6 +1314,8 @@ export class GameScene extends Phaser.Scene {
       wave: this.wave,
       weaponLevel: this.weaponLevel,
       shieldCount: this.shieldCount,
+      damageBonus: this.damageBonus,
+      attackSpeedBonus: this.attackSpeedBonus,
       spawnedThisWave: this.spawnedThisWave,
       waveTotal: this.waveTotal,
       activeEnemies: this.enemies.countActive(true),
