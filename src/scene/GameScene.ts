@@ -26,6 +26,7 @@ import {
 import { FxSystem } from '@/game/FxSystem';
 import { GateSystem } from '@/game/GateSystem';
 import { HudController } from '@/game/HudController';
+import { NumberWallSystem } from '@/game/NumberWallSystem';
 import { RunwayRenderer } from '@/game/RunwayRenderer';
 import {
   getDepthAtY,
@@ -77,6 +78,10 @@ export class GameScene extends Phaser.Scene {
   private readonly gates = new GateSystem(this, (reward, x, y) =>
     this.applyGateReward(reward, x, y),
   );
+  private readonly walls = new NumberWallSystem(this, {
+    onBulletDamage: () => this.currentBulletDamage(),
+    onBreach: () => this.damagePlayer(),
+  });
   private keys: Partial<
     Record<'LEFT' | 'RIGHT' | 'A' | 'D', Phaser.Input.Keyboard.Key>
   > = {};
@@ -136,6 +141,7 @@ export class GameScene extends Phaser.Scene {
     this.attackSpeedBonus = 0;
     this.rangedSpawnedThisWave = 0;
     this.gates.reset();
+    this.walls.reset();
     this.fireTimer = undefined;
     this.spawnTimer = undefined;
     this.nextWaveTimer = undefined;
@@ -356,6 +362,14 @@ export class GameScene extends Phaser.Scene {
       undefined,
       this,
     );
+    this.physics.add.overlap(
+      this.bullets,
+      this.walls.physicsGroup,
+      (bulletObject, wallObject) =>
+        this.walls.handleBulletHit(bulletObject, wallObject),
+      undefined,
+      this,
+    );
   }
 
   /** 波次 / 清空横幅（流程提示，仍由 GameScene 编排）。 */
@@ -423,6 +437,7 @@ export class GameScene extends Phaser.Scene {
       this.input.off(Phaser.Input.Events.POINTER_MOVE, this.onPointerMove, this);
       this.input.off(Phaser.Input.Events.POINTER_UP, this.onPointerUp, this);
       this.gates.clear();
+      this.walls.clear();
       this.fireTimer?.remove();
       this.spawnTimer?.remove();
       this.nextWaveTimer?.remove();
@@ -459,6 +474,11 @@ export class GameScene extends Phaser.Scene {
 
     // 奖励目标：概率生成，且避开屏上的门组
     this.spawnRewardTargets(wave);
+
+    // 数字墙：概率生成，避开门组与拥挤的奖励目标
+    const crowded =
+      this.rewardBoxes.countActive(true) + this.barrels.countActive(true) >= 2;
+    this.walls.onWaveStart(wave, this.gates.hasActiveGroup(), crowded);
   }
 
   /** 奖励箱 / 爆炸桶的按波概率生成（频率、上限见 REWARD_BOX / BARREL 配置）。 */
@@ -1396,6 +1416,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.updateSquadFormation(deltaSeconds);
     this.updateRangedEnemies();
+    this.walls.update(this.player.x, this.player.y);
     this.syncPerspective();
     // 门触发以玩家本体（小队中心）为准：跟随成员不单独触发，
     // 避免 8 人编队宽度变大后同时吃到两个门。

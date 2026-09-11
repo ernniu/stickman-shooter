@@ -305,6 +305,29 @@ export const ENEMY_BULLET = {
   maxOnScreen: 6,
 } as const;
 
+/** 数字墙：可射击打破的路障，到危险线/触碰玩家则扣一次装备。 */
+export const NUMBER_WALL = {
+  startWave: 5,
+  everyWaves: 3,
+  spawnChance: 0.6,
+  maxOnScreen: 2,
+  /** hp = baseHp + hpPerWave × (wave-1)，封顶 maxHpCap（不做无限高血量）。 */
+  baseHp: 10,
+  hpPerWave: 1,
+  maxHpCap: 22,
+  width: gameUnits(260),
+  height: gameUnits(300),
+  bodyWidthRatio: 0.9,
+  bodyHeightRatio: 0.85,
+  speed: gameUnits(300),
+  /** 生成双墙的概率；双墙左右 hp 按比例差异化，供玩家选路。 */
+  doubleChance: 0.5,
+  doubleHpScale: [1, 1.6] as ReadonlyArray<number>,
+  doubleLaneU: 0.42,
+  /** 血量比例低于此值时墙体颜色转灰暗。 */
+  lowHpColorRatio: 0.35,
+} as const;
+
 /** 跑道增益门（选择门）配置：尺寸、节奏、奖励全部集中在此。 */
 export const GATE = {
   // 生成节奏：从 startWave 开始，每 everyWaves 波一组，且两组间隔不小于 minIntervalMs

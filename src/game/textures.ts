@@ -16,6 +16,7 @@ export const TEX = {
   rewardBox: 'tex-reward-box',
   barrel: 'tex-explosive-barrel',
   enemyBullet: 'tex-enemy-bullet',
+  numberWall: 'tex-number-wall',
   sun: 'tex-sun',
   vignette: 'tex-vignette',
 } as const;
@@ -168,6 +169,28 @@ export const ensureGameTextures = (scene: Phaser.Scene): void => {
     ctx.stroke();
   });
 
+  ensureCanvasTexture(scene, TEX.numberWall, 128, 148, (ctx) => {
+    // 机械路障：浅灰白板体（由运行时 tint 上色 红/橙/灰）+ 深色厚描边 + 四角铆钉
+    ctx.fillStyle = '#dbe2ea';
+    ctx.fillRect(10, 12, 108, 124);
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 12;
+    ctx.strokeRect(10, 12, 108, 124);
+    ctx.fillStyle = '#475569';
+    for (const [rx, ry] of [
+      [26, 28],
+      [102, 28],
+      [26, 120],
+      [102, 120],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(rx, ry, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.fillRect(20, 18, 60, 10);
+  });
+
   ensureCanvasTexture(scene, TEX.enemyBullet, 64, 64, (ctx) => {
     // 敌方能量弹：外圈橙色光晕 + 红色弹体 + 白色核心
     const glow = ctx.createRadialGradient(32, 32, 6, 32, 32, 32);
@@ -301,6 +324,7 @@ export const OPTIONAL_TEX = {
   barrel: 'explosive_barrel_sprite',
   rangedEnemy: 'enemy_ranged_sprite',
   enemyBullet: 'enemy_bullet_sprite',
+  numberWall: 'number_wall_sprite',
 } as const;
 
 export type OptionalTexSlot = keyof typeof OPTIONAL_TEX;
