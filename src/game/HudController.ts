@@ -47,6 +47,8 @@ export class HudController {
   private rageBar?: Phaser.GameObjects.Graphics;
   private shieldText?: Phaser.GameObjects.Text;
   private buffText?: Phaser.GameObjects.Text;
+  private starterText?: Phaser.GameObjects.Text;
+  private rageVisible = false;
 
   constructor(private readonly scene: Phaser.Scene) {}
 
@@ -211,6 +213,31 @@ export class HudController {
       .setStroke('#0f172a', gameUnits(6))
       .setDepth(10)
       .setVisible(false);
+
+    // 起步火力小字：与狂暴提示互斥显示（同一位置）
+    this.starterText = this.scene.add
+      .text(GAME_CENTER_X, HUD.y + gameUnits(215), '起步火力', {
+        fontFamily: FONT_FAMILY,
+        fontSize: gamePixels(44),
+        color: '#86efac',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setStroke('#0f172a', gameUnits(6))
+      .setDepth(10)
+      .setVisible(false);
+  }
+
+  /** 起步火力倒计时提示（remainMs <= 0 或狂暴中隐藏）。 */
+  setStarter(remainMs: number): void {
+    if (!this.starterText) {
+      return;
+    }
+    const visible = remainMs > 0 && !this.rageVisible;
+    this.starterText.setVisible(visible);
+    if (visible) {
+      this.starterText.setText(`起步火力 ${Math.ceil(remainMs / 1000)}s`);
+    }
   }
 
   update(view: HudView): void {
@@ -282,6 +309,7 @@ export class HudController {
     if (!this.rageText || !this.rageBar) {
       return;
     }
+    this.rageVisible = active;
     this.rageText.setVisible(active);
     this.rageBar.setVisible(active);
     if (!active) {

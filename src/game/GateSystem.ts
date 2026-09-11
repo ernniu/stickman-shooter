@@ -79,11 +79,11 @@ export class GateSystem {
   }
 
   /** 关卡片段直接生成一组门（跳过波次节奏，仅保留同屏一组限制）。 */
-  spawnGroupNow(segmentId?: number): void {
+  spawnGroupNow(segmentId?: number, fixedKinds?: ReadonlyArray<GateKind>): void {
     if (this.groups.length > 0) {
       return;
     }
-    this.spawnGroup();
+    this.spawnGroup(fixedKinds);
     this.lastSpawnAt = this.scene.time.now;
     if (segmentId !== undefined) {
       for (const group of this.groups) {
@@ -155,7 +155,8 @@ export class GateSystem {
     }
   }
 
-  private spawnGroup(): void {
+  /** 生成一组门：缺省从组合池随机，传入 fixedKinds 时用固定组合（开局首组）。 */
+  private spawnGroup(fixedKinds?: ReadonlyArray<GateKind>): void {
     const spawnY = GAME_HEIGHT * GATE.spawnYRatio;
     const gap = GAME_WIDTH * GATE.gapRatio;
     const spawnBounds = getLaneBoundsAtY(spawnY);
@@ -166,7 +167,7 @@ export class GateSystem {
       Math.min(GAME_WIDTH * GATE.widthRatio, usable / 2),
     );
     const height = GAME_HEIGHT * GATE.heightRatio;
-    const kinds = this.pickKinds();
+    const kinds = fixedKinds ?? this.pickKinds();
     const halfWidthAtSpawn = getLaneHalfWidthAtY(spawnY);
     const laneOffset = Math.min(
       0.8,

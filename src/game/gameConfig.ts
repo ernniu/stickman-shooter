@@ -43,6 +43,8 @@ export const ENEMY = {
   spawnIntervalMs: 700,
   spawnTopY: -gameUnits(200),
   score: 10,
+  /** 同屏普通敌人上限：达到后批次生成延后（不丢失总数）。 */
+  maxOnScreen: 26,
   // 血量：第 n 波 = baseHp + floor((n-1)/hpWaveStep)，子弹每发扣 1
   baseHp: 2,
   hpWaveStep: 2,
@@ -352,6 +354,14 @@ export const BOSS = {
   deathDelayMs: 1400,
   /** 攻击后的输出窗口（弱点高亮时长，本轮仅视觉）。 */
   weakPointWindowMs: 1000,
+} as const;
+
+/** 起步火力：开局爽感用，仅前 durationMs 生效的更快基础射击间隔。 */
+export const STARTER_FIRE = {
+  /** 生效时长（从正式开战起算，不含开局提示层）。 */
+  durationMs: 10000,
+  /** 起步阶段基础射击间隔（正常为 BULLET.fireIntervalMs = 300）。 */
+  baseIntervalMs: 220,
 } as const;
 
 /** 跑道增益门（选择门）配置：尺寸、节奏、奖励全部集中在此。 */

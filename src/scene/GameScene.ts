@@ -19,6 +19,7 @@ import {
   RAGE,
   RUNWAY,
   SQUAD_FORMATION,
+  STARTER_FIRE,
   enemyCountForWave,
   enemyHpForWave,
   enemySpeedForWave,
@@ -120,6 +121,9 @@ export class GameScene extends Phaser.Scene {
   private attackSpeedBonus = 0;
   // 本波已生成的远程敌人数（每波上限见 RANGED_ENEMY.maxPerWave）
   private rangedSpawnedThisWave = 0;
+  // 起步火力：正式开战时刻，前 STARTER_FIRE.durationMs 内基础间隔更快
+  private runStartAt = 0;
+  private starterWasActive = false;
   // 手指拖动：只跟踪第一根手指；dragOffsetX 记录按下瞬间玩家与手指的相对偏移。
   private pointerId: number | null = null;
   private dragOffsetX = 0;
@@ -152,6 +156,8 @@ export class GameScene extends Phaser.Scene {
     this.attackSpeedBonus = 0;
     this.rangedSpawnedThisWave = 0;
     this.rangedAllowed = false;
+    this.runStartAt = 0;
+    this.starterWasActive = false;
     this.levelFlow.reset();
     this.gates.reset();
     this.walls.reset();
@@ -291,6 +297,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.state = 'playing';
+    // 起步火力计时从正式开战起算（开局提示层不计入 10 秒）
+    this.runStartAt = this.time.now;
     for (const object of this.readyLayer) {
       this.tweens.killTweensOf(object);
       object.destroy();
@@ -497,12 +505,14 @@ export class GameScene extends Phaser.Scene {
     this.updateHud();
 
     if (this.waveTotal > 0) {
+      // 批次生成：立即先出一批，之后按批次间隔补齐；同屏达上限自动延后
       this.spawnTimer = this.time.addEvent({
-        delay: ENEMY.spawnIntervalMs,
-        repeat: this.waveTotal - 1,
-        callback: this.spawnEnemy,
+        delay: segment.spawnBatchIntervalMs ?? ENEMY.spawnIntervalMs,
+        loop: true,
+        callback: this.spawnTick,
         callbackScope: this,
       });
+      this.spawnTick();
     }
 
     // 每 2 难度波掉落一个武器升级道具（保留原补给节奏）
@@ -510,9 +520,18 @@ export class GameScene extends Phaser.Scene {
       this.spawnPowerUp();
     }
 
-    // 成长门：片段显式配置（选择段/战斗段均可携带）
+    // 成长门：片段显式配置；支持延迟出现与固定组合（开局首组）
     if (segment.gatePair) {
-      this.gates.spawnGroupNow(segmentId);
+      const spawnGates = (): void => {
+        if (this.state === 'playing') {
+          this.gates.spawnGroupNow(segmentId, segment.gateFixedKinds);
+        }
+      };
+      if (segment.gateDelayMs) {
+        this.time.delayedCall(segment.gateDelayMs, spawnGates);
+      } else {
+        spawnGates();
+      }
     }
 
     // 奖励箱 / 爆炸桶：片段显式配置
@@ -638,12 +657,36 @@ export class GameScene extends Phaser.Scene {
     barrel.setData('shadow', shadow);
   }
 
+  /** 批次生成 tick：同屏达上限时延后（loop 定时器下批再试，总数不丢）。 */
+  private spawnTick(): void {
+    if (this.spawnedThisWave >= this.waveTotal) {
+      this.spawnTimer?.remove();
+      this.spawnTimer = undefined;
+      return;
+    }
+    const active = this.enemies.countActive(true);
+    if (active >= ENEMY.maxOnScreen) {
+      return;
+    }
+    const segment = this.levelFlow.segment;
+    const remaining = this.waveTotal - this.spawnedThisWave;
+    const count = Math.min(
+      segment.spawnBatchSize ?? 1,
+      remaining,
+      ENEMY.maxOnScreen - active,
+    );
+    for (let index = 0; index < count; index += 1) {
+      this.spawnEnemy();
+    }
+  }
+
   private spawnEnemy(): void {
     if (this.state !== 'playing') {
       return;
     }
-    // 阵型：按本波序号分配横向车道 + 抖动；纵向随机错开，避免单列排队
-    const laneCount = Math.max(1, ENEMY.formationLanes);
+    const segment = this.levelFlow.segment;
+    // 阵型：按本波序号分配横向车道 + 抖动；宽屏展开时车道更多，形成小怪群
+    const laneCount = Math.max(1, segment.spawnWide ? 8 : ENEMY.formationLanes);
     const laneIndex = this.spawnedThisWave % laneCount;
     const jitterU = Phaser.Math.FloatBetween(-0.06, 0.06);
     const laneU = Phaser.Math.Clamp(
@@ -651,8 +694,13 @@ export class GameScene extends Phaser.Scene {
       -0.75,
       0.75,
     );
-    const spawnY =
-      ENEMY.spawnTopY - ENEMY.height * ENEMY.spawnJitterRatio * Math.random();
+    // 生成纵向区域：片段可指定屏内上部（8%~22%），缺省从最顶部进入
+    const spawnY = segment.spawnYRange
+      ? GAME_HEIGHT *
+        (segment.spawnYRange.top +
+          Math.random() *
+            (segment.spawnYRange.bottom - segment.spawnYRange.top))
+      : ENEMY.spawnTopY - ENEMY.height * ENEMY.spawnJitterRatio * Math.random();
     const spawnBounds = getLaneBoundsAtY(spawnY);
     const edge = ENEMY.width * 0.45;
     const spawnX = Phaser.Math.Clamp(
@@ -682,7 +730,7 @@ export class GameScene extends Phaser.Scene {
     enemy.setData('segmentId', this.levelFlow.segmentId);
     enemy
       .setDisplaySize(ENEMY.width, ENEMY.height)
-      .setDepth(getDepthAtY(ENEMY.spawnTopY));
+      .setDepth(getDepthAtY(spawnY));
     // 记录基准缩放，透视缩放 = baseScale × getPerspectiveScaleAtY(y)
     enemy.setData('baseScale', enemy.scaleX);
     if (isRanged) {
@@ -718,8 +766,17 @@ export class GameScene extends Phaser.Scene {
     shadow.setPosition(spawnX, spawnY + ENEMY.height * 0.44);
     enemy.setData('shadow', shadow);
 
-    // 头顶血量数字：跟随敌人下落，受击时逐发扣减。远程敌人有额外血量。
-    const hp = enemyHpForWave(this.wave) + (isRanged ? RANGED_ENEMY.hpBonus : 0);
+    // 头顶血量：低血群固定 1 血；片段 hpOverride 优先；远程敌人有额外血量。
+    let hp = enemyHpForWave(this.wave);
+    if (segment.lowHpSwarm) {
+      hp = 1;
+    }
+    if (segment.hpOverride !== undefined) {
+      hp = segment.hpOverride;
+    }
+    if (isRanged) {
+      hp += RANGED_ENEMY.hpBonus;
+    }
     enemy.setData('hp', hp);
     const hpText = addGameText(
       this,
@@ -817,11 +874,26 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * 当前射击间隔 = 基础（或狂暴）间隔 ÷ (1 + 攻速加成)，再钳制下限。
-   * 狂暴与攻速强化同时生效：狂暴在强化后的基础上进一步取更短间隔。
+   * 起步火力：正式开战后前 STARTER_FIRE.durationMs 生效，
+   * 只替换基础射击间隔（220ms），攻速/狂暴在此之上正常叠加。
+   */
+  private isStarterFire(): boolean {
+    return (
+      this.runStartAt > 0 &&
+      this.time.now - this.runStartAt < STARTER_FIRE.durationMs
+    );
+  }
+
+  /**
+   * 当前射击间隔 = 基础（狂暴 > 起步火力 > 正常）÷ (1 + 攻速加成)，再钳制下限。
+   * 叠加优先级：狂暴覆盖基础间隔 → 起步火力仅在前 10s 生效 → 攻速加成统一乘区。
    */
   private currentFireInterval(): number {
-    const base = this.isRaging() ? RAGE.fireIntervalMs : BULLET.fireIntervalMs;
+    const base = this.isRaging()
+      ? RAGE.fireIntervalMs
+      : this.isStarterFire()
+        ? STARTER_FIRE.baseIntervalMs
+        : BULLET.fireIntervalMs;
     return Math.max(
       GROWTH.minFireIntervalMs,
       Math.round(base / (1 + this.attackSpeedBonus)),
@@ -1470,6 +1542,15 @@ export class GameScene extends Phaser.Scene {
       this.rageWasActive = raging;
       this.refreshFireTimer();
     }
+    // 起步火力：进入/退出时同样重建开火定时器
+    const starter = this.isStarterFire();
+    if (starter !== this.starterWasActive) {
+      this.starterWasActive = starter;
+      this.refreshFireTimer();
+    }
+    this.hud.setStarter(
+      starter ? STARTER_FIRE.durationMs - (this.time.now - this.runStartAt) : 0,
+    );
     this.updateAuras(raging);
     this.hud.setRage(
       raging,

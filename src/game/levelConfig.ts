@@ -3,6 +3,8 @@
  * 第一关固定 8 段：战斗 → 选择 → 奖励 → 战斗 → Boss。
  */
 
+import type { GateKind } from './gameConfig';
+
 export type SegmentType =
   | 'combat'
   | 'gate'
@@ -28,8 +30,23 @@ export interface LevelSegment {
   readonly enemyCount?: number;
   /** 是否允许远程敌人生成。 */
   readonly allowRanged?: boolean;
+  /** 批次生成：每批数量与间隔（缺省逐个按 ENEMY.spawnIntervalMs）。 */
+  readonly spawnBatchSize?: number;
+  readonly spawnBatchIntervalMs?: number;
+  /** 生成纵向区域（屏幕高度比例），缺省从最顶部进入。 */
+  readonly spawnYRange?: { readonly top: number; readonly bottom: number };
+  /** 横向宽屏展开（更宽车道数，形成小怪群）。 */
+  readonly spawnWide?: boolean;
+  /** 低血量群：本段敌人固定 1 血（开局爽感用）。 */
+  readonly lowHpSwarm?: boolean;
+  /** 血量覆盖（优先于难度波公式与 lowHpSwarm）。 */
+  readonly hpOverride?: number;
   /** 是否生成一组成长门。 */
   readonly gatePair?: boolean;
+  /** 门出现延迟（毫秒，开局爽感节奏用）。 */
+  readonly gateDelayMs?: number;
+  /** 固定门组合（不走随机池，开局首组用）。 */
+  readonly gateFixedKinds?: ReadonlyArray<GateKind>;
   /** 是否生成奖励箱。 */
   readonly rewardBox?: boolean;
   /** 爆炸桶数量。 */
@@ -49,15 +66,27 @@ export const LEVEL_1: ReadonlyArray<LevelSegment> = [
     type: 'combat',
     hint: '迎战第一波敌群！',
     difficultyWave: 1,
-    enemyCount: 6,
+    enemyCount: 14,
+    spawnBatchSize: 5,
+    spawnBatchIntervalMs: 380,
+    spawnYRange: { top: 0.08, bottom: 0.2 },
+    spawnWide: true,
+    lowHpSwarm: true,
     gatePair: true,
+    gateDelayMs: 7000,
+    gateFixedKinds: ['squad', 'attackSpeed'],
     completion: 'enemies-cleared',
   },
   {
     type: 'reward',
     hint: '击破宝箱获取补给！',
     difficultyWave: 2,
-    enemyCount: 8,
+    enemyCount: 18,
+    spawnBatchSize: 5,
+    spawnBatchIntervalMs: 400,
+    spawnYRange: { top: 0.08, bottom: 0.2 },
+    spawnWide: true,
+    lowHpSwarm: true,
     rewardBox: true,
     completion: 'reward-resolved',
   },
@@ -65,15 +94,22 @@ export const LEVEL_1: ReadonlyArray<LevelSegment> = [
     type: 'gate',
     hint: '选择你的成长方向！',
     difficultyWave: 3,
-    enemyCount: 4,
-    gatePair: true,
+    enemyCount: 20,
+    spawnBatchSize: 5,
+    spawnBatchIntervalMs: 420,
+    spawnYRange: { top: 0.08, bottom: 0.2 },
+    spawnWide: true,
     completion: 'gate-resolved',
   },
   {
     type: 'ranged',
     hint: '躲避子弹，善用爆炸桶！',
     difficultyWave: 4,
-    enemyCount: 8,
+    enemyCount: 24,
+    spawnBatchSize: 6,
+    spawnBatchIntervalMs: 420,
+    spawnYRange: { top: 0.08, bottom: 0.2 },
+    spawnWide: true,
     allowRanged: true,
     barrels: 2,
     completion: 'enemies-cleared',
@@ -82,7 +118,9 @@ export const LEVEL_1: ReadonlyArray<LevelSegment> = [
     type: 'walls',
     hint: '打穿数字墙，选择路线！',
     difficultyWave: 5,
-    enemyCount: 4,
+    enemyCount: 14,
+    spawnBatchSize: 4,
+    spawnBatchIntervalMs: 450,
     wallsMode: 'double',
     gatePair: true,
     completion: 'walls-resolved',
@@ -90,8 +128,13 @@ export const LEVEL_1: ReadonlyArray<LevelSegment> = [
   {
     type: 'combat',
     hint: '高压敌群！坚持住！',
-    difficultyWave: 7,
-    enemyCount: 14,
+    difficultyWave: 5,
+    enemyCount: 42,
+    spawnBatchSize: 6,
+    spawnBatchIntervalMs: 380,
+    spawnYRange: { top: 0.08, bottom: 0.2 },
+    spawnWide: true,
+    hpOverride: 3,
     rewardBox: true,
     completion: 'reward-resolved',
   },
@@ -99,7 +142,9 @@ export const LEVEL_1: ReadonlyArray<LevelSegment> = [
     type: 'gate',
     hint: 'Boss 前的最后成长！',
     difficultyWave: 8,
-    enemyCount: 4,
+    enemyCount: 16,
+    spawnBatchSize: 4,
+    spawnBatchIntervalMs: 450,
     gatePair: true,
     completion: 'gate-resolved',
   },
