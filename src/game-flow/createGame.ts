@@ -55,6 +55,9 @@ const createGame = (launchPlan?: LaunchSpec): Phaser.Game => {
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
     backgroundColor: '#dff1ff',
+    // 项目无音频：完全禁用音频系统，规避 Phaser 移动端 HTML5 Audio
+    // unlock 逻辑访问空 audio 缓存导致的运行时崩溃（真机 touchend 触发）。
+    audio: { noAudio: true },
     physics: {
       default: 'arcade',
       arcade: {
