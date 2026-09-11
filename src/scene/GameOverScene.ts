@@ -71,7 +71,10 @@ export class GameOverScene extends Phaser.Scene {
       .setDepth(1);
 
     const panelWidth = gameUnits(1640);
-    const panelHeight = gameUnits(1900);
+    // 关卡完成时追加 5 行成长结算，面板加高避免与按钮重叠
+    const panelHeight = this.levelComplete
+      ? gameUnits(2500)
+      : gameUnits(1900);
     const panelCenterY = GAME_HEIGHT * 0.42;
     const panelTop = panelCenterY - panelHeight / 2;
     const panel = this.add.graphics().setDepth(2);

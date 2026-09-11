@@ -25,6 +25,27 @@
       document.addEventListener('contextmenu', (event) =>
         event.preventDefault(),
       );
+      // 调试浮层：运行时报错直接显示在画面顶部（便于真机排查，不影响正常流程）
+      window.addEventListener('error', (event) => {
+        showRuntimeError(event.message);
+      });
+      window.addEventListener('unhandledrejection', (event) => {
+        showRuntimeError(String(event.reason));
+      });
+      function showRuntimeError(message) {
+        let box = document.getElementById('runtime-error');
+        if (!box) {
+          box = document.createElement('pre');
+          box.id = 'runtime-error';
+          box.style.cssText =
+            'position:fixed;top:0;left:0;right:0;z-index:9999;' +
+            'max-height:40%;overflow:auto;margin:0;padding:8px;' +
+            'background:rgba(120,0,0,0.85);color:#fff;font-size:12px;' +
+            'white-space:pre-wrap;word-break:break-all;';
+          document.body.appendChild(box);
+        }
+        box.textContent += message + '\n';
+      }
     </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
