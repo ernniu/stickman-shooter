@@ -18,8 +18,8 @@ export const PLAYER = {
   squadSpread: gameUnits(170),
   squadYOffset: gameUnits(60),
   squadLerp: 14,
-  // 编队上限（1~5 人）；武器等级 = 编队人数，上限自动取此值
-  maxSquadSize: 5,
+  // 编队上限（1~8 人）；装备数量 = 本体 + 编队成员，上限自动取此值
+  maxSquadSize: 8,
   // 仅视觉放大（碰撞体仍按 width/height 计算，手感与判定不变）
   displayScale: 1.22,
 } as const;
@@ -169,6 +169,30 @@ export const SQUAD_FORMATION: Record<
     { dx: -0.7, row: 2 },
     { dx: 0.7, row: 2 },
   ],
+  6: [
+    { dx: -1.35, row: 1 },
+    { dx: 0, row: 1 },
+    { dx: 1.35, row: 1 },
+    { dx: -0.7, row: 2 },
+    { dx: 0.7, row: 2 },
+  ],
+  7: [
+    { dx: -1.35, row: 1 },
+    { dx: 0, row: 1 },
+    { dx: 1.35, row: 1 },
+    { dx: -0.7, row: 2 },
+    { dx: 0.7, row: 2 },
+    { dx: 0, row: 3 },
+  ],
+  8: [
+    { dx: -1.35, row: 1 },
+    { dx: 0, row: 1 },
+    { dx: 1.35, row: 1 },
+    { dx: -0.7, row: 2 },
+    { dx: 0, row: 2 },
+    { dx: 0.7, row: 2 },
+    { dx: 0, row: 3 },
+  ],
 };
 
 /** 狂暴射击：满编队后触发的爆发状态（更快的射击 + 更强的视觉）。 */
@@ -268,9 +292,24 @@ export const POWER_UP = {
   size: gameUnits(160),
   speed: gameUnits(320),
   dropEveryWaves: 2,
-  // 武器等级 = 编队人数，上限与编队上限保持一致（单一真源）
+  // 武器等级 = 装备数量（本体 + 编队成员），上限与编队上限保持一致（单一真源）
   maxWeaponLevel: PLAYER.maxSquadSize,
   maxedBonusScore: 50,
+} as const;
+
+/**
+ * 装备生命系统：装备数量既是火力（每个装备独立射击）也是生命（受伤掉装备）。
+ * 装备归零（只剩本体时再受伤）即 Game Over。
+ */
+export const EQUIPMENT = {
+  /** 开局装备数量（本体 + 1 名跟随成员）。 */
+  start: 2,
+  /** 装备上限 = 编队上限（单一真源，8）。 */
+  max: PLAYER.maxSquadSize,
+  /** 受伤后的无敌时间：期间不重复扣装备。 */
+  invincibleMs: 900,
+  /** 护盾最多保留层数。 */
+  shieldMax: 1,
 } as const;
 
 /** 第 n 波敌人数 = 4 + n * 2（第 1 波 6 个，之后每波 +2）。 */

@@ -4,6 +4,7 @@ import {
   BULLET,
   DANGER_LINE_Y,
   ENEMY,
+  EQUIPMENT,
   FEEDBACK,
   GATE,
   PLAYER,
@@ -87,6 +88,9 @@ export class GameScene extends Phaser.Scene {
   // 狂暴射击：rageEndsAt 之前处于狂暴状态（更快的射击间隔 + 增强视觉）
   private rageEndsAt = 0;
   private rageWasActive = false;
+  // 装备生命系统：护盾层数（上限 EQUIPMENT.shieldMax）与无敌截止时间
+  private shieldCount = 0;
+  private invincibleUntil = 0;
   // 手指拖动：只跟踪第一根手指；dragOffsetX 记录按下瞬间玩家与手指的相对偏移。
   private pointerId: number | null = null;
   private dragOffsetX = 0;
@@ -107,12 +111,14 @@ export class GameScene extends Phaser.Scene {
     this.score = 0;
     this.coins = 0;
     this.wave = 1;
-    this.weaponLevel = 1;
+    this.weaponLevel = EQUIPMENT.start;
     this.waveTotal = 0;
     this.spawnedThisWave = 0;
     this.swingTime = 0;
     this.rageEndsAt = 0;
     this.rageWasActive = false;
+    this.shieldCount = 0;
+    this.invincibleUntil = 0;
     this.gates.reset();
     this.fireTimer = undefined;
     this.spawnTimer = undefined;
@@ -137,8 +143,10 @@ export class GameScene extends Phaser.Scene {
     drawDangerLine(this, DANGER_LINE_Y, lane.laneLeft, lane.laneRight);
 
     this.buildPhysicsObjects();
+    this.syncSquad();
     this.targetX = this.player.x;
     this.hud.create();
+    this.updateHud();
     this.buildBanner();
     this.bindInput();
     this.bindShutdown();
@@ -779,7 +787,7 @@ export class GameScene extends Phaser.Scene {
         this,
         this.player.x,
         this.player.y - PLAYER.height * 0.9,
-        '编队扩大！',
+        '装备 +1！',
         '#ede9fe',
         { pop: true },
       );
@@ -822,7 +830,8 @@ export class GameScene extends Phaser.Scene {
           }
         });
       } else {
-        // 编队已满：+1人 门转为狂暴射击，并附少量金币
+        // 满编：+1人 门转为狂暴射击，并附少量金币。
+        // 预留：后续可把“超出上限的装备”转换为伤害加成（本轮不实现）。
         this.startRage();
         this.coins += GATE.squadFullCoins;
         this.hud.setCoins(this.coins, true);
@@ -848,11 +857,11 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     const enemy = enemyObject as Phaser.Physics.Arcade.Sprite;
-    // 正在播放受击特效（已停止下落）的敌人不再触发玩家死亡。
+    // 正在播放受击特效（已停止下落）的敌人不再触发玩家受伤。
     if (!enemy.active || enemy.getData('dying')) {
       return;
     }
-    this.gameOver();
+    this.damagePlayer();
   }
 
   update(_time: number, delta: number): void {
@@ -970,9 +979,13 @@ export class GameScene extends Phaser.Scene {
     return SQUAD_FORMATION[level] ?? [];
   }
 
-  /** 按当前编队等级补建跟随成员（等级只升不降，无需销毁逻辑）。 */
+  /** 按当前装备等级同步跟随成员数量（可增可减，减员走 removeFollower 清理）。 */
   private syncSquad(): void {
     const slots = this.squadSlots();
+    // 装备减少：先移除多出的跟随成员（保持数组与阵位一致）
+    while (this.squadFollowers.length > slots.length) {
+      this.removeFollower(this.squadFollowers.length - 1);
+    }
     while (this.squadFollowers.length < slots.length) {
       const index = this.squadFollowers.length;
       const slot = slots[index];
@@ -1024,6 +1037,126 @@ export class GameScene extends Phaser.Scene {
         this,
       );
     }
+  }
+
+  /** 移除指定下标的跟随成员：连带清理影子、光圈与 tween，避免残留。 */
+  private removeFollower(index: number): void {
+    const follower = this.squadFollowers[index];
+    if (!follower) {
+      return;
+    }
+    this.squadFollowers.splice(index, 1);
+    const shadow = follower.getData('shadow') as
+      | Phaser.GameObjects.Ellipse
+      | undefined;
+    const aura = follower.getData('aura') as
+      | Phaser.GameObjects.Arc
+      | Phaser.GameObjects.Graphics
+      | undefined;
+    this.tweens.killTweensOf(follower);
+    follower.destroy();
+    shadow?.destroy();
+    aura?.destroy();
+  }
+
+  /**
+   * 装备受伤入口：本体或任意成员被敌人接触时调用。
+   * 优先消耗护盾 → 其次损失一个装备（移除最外侧跟随成员）→ 只剩本体时 Game Over。
+   */
+  private damagePlayer(): void {
+    if (this.state !== 'playing') {
+      return;
+    }
+    if (this.time.now < this.invincibleUntil) {
+      return;
+    }
+
+    // 1. 护盾优先抵伤
+    if (this.shieldCount > 0) {
+      this.shieldCount -= 1;
+      this.updateHud();
+      this.startInvincibility();
+      floatText(
+        this,
+        this.player.x,
+        this.player.y - PLAYER.height * PLAYER.displayScale,
+        '护盾抵挡！',
+        '#7dd3fc',
+        { pop: true },
+      );
+      return;
+    }
+
+    // 2. 还有跟随成员：损失一个装备（最后加入 = 最外侧阵位）
+    if (this.squadFollowers.length > 0) {
+      const index = this.squadFollowers.length - 1;
+      const lostX = this.squadFollowers[index].x;
+      const lostY = this.squadFollowers[index].y;
+      this.removeFollower(index);
+      this.weaponLevel = Math.max(1, this.weaponLevel - 1);
+      this.syncSquad();
+      this.startInvincibility();
+      this.updateHud();
+      floatText(this, lostX, lostY, '-1 装备', '#fca5a5', { pop: true });
+      return;
+    }
+
+    // 3. 只剩本体：Game Over
+    this.gameOver();
+  }
+
+  /** 受伤后的短暂无敌：全员半透明闪烁，期间不重复扣装备。 */
+  private startInvincibility(): void {
+    this.invincibleUntil = this.time.now + EQUIPMENT.invincibleMs;
+    const members = [this.player, ...this.squadFollowers];
+    for (const member of members) {
+      this.tweens.killTweensOf(member);
+      this.tweens.add({
+        targets: member,
+        alpha: { from: 0.3, to: 1 },
+        duration: EQUIPMENT.invincibleMs / 6,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.inOut',
+      });
+    }
+    this.time.delayedCall(EQUIPMENT.invincibleMs, () => {
+      this.endInvincibility();
+    });
+  }
+
+  private endInvincibility(): void {
+    this.invincibleUntil = 0;
+    if (this.state === 'over') {
+      return;
+    }
+    for (const member of [this.player, ...this.squadFollowers]) {
+      this.tweens.killTweensOf(member);
+      member.setAlpha(1);
+    }
+  }
+
+  /**
+   * 预留接口：护盾门 / 奖励箱等后续玩法调用。
+   * 超过 EQUIPMENT.shieldMax 不叠加。
+   */
+  applyShield(): void {
+    if (this.state !== 'playing') {
+      return;
+    }
+    if (this.shieldCount >= EQUIPMENT.shieldMax) {
+      return;
+    }
+    this.shieldCount += 1;
+    this.updateHud();
+    floatText(
+      this,
+      this.player.x,
+      this.player.y - PLAYER.height * PLAYER.displayScale,
+      '护盾！',
+      '#7dd3fc',
+      { pop: true },
+    );
   }
 
   /** 跟随成员平滑贴向阵位（略滞后于本体，形成编队弹性）。 */
@@ -1100,6 +1233,7 @@ export class GameScene extends Phaser.Scene {
       score: this.score,
       wave: this.wave,
       weaponLevel: this.weaponLevel,
+      shieldCount: this.shieldCount,
       spawnedThisWave: this.spawnedThisWave,
       waveTotal: this.waveTotal,
       activeEnemies: this.enemies.countActive(true),
@@ -1277,6 +1411,8 @@ export class GameScene extends Phaser.Scene {
 
     this.player.setTint(0xff6b6b);
     this.player.anims?.pause();
+    // 先终止无敌闪烁 tween，再定格半透明表现
+    this.tweens.killTweensOf([this.player, ...this.squadFollowers]);
     for (const follower of this.squadFollowers) {
       follower.setAlpha(0.5);
       follower.anims?.pause();

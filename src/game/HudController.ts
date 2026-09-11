@@ -10,7 +10,7 @@ import {
 } from '@/rendering';
 import { markEditable } from '@/utils';
 
-import { HUD, POWER_UP, PROGRESS } from './gameConfig';
+import { EQUIPMENT, HUD, POWER_UP, PROGRESS } from './gameConfig';
 import { TEX, resolveTexture } from './textures';
 import { FONT_FAMILY, drawHudPill } from './ui';
 
@@ -19,6 +19,7 @@ export interface HudView {
   readonly score: number;
   readonly wave: number;
   readonly weaponLevel: number;
+  readonly shieldCount: number;
   readonly spawnedThisWave: number;
   readonly waveTotal: number;
   readonly activeEnemies: number;
@@ -39,6 +40,7 @@ export class HudController {
   private progressBar?: Phaser.GameObjects.Graphics;
   private rageText?: Phaser.GameObjects.Text;
   private rageBar?: Phaser.GameObjects.Graphics;
+  private shieldText?: Phaser.GameObjects.Text;
 
   constructor(private readonly scene: Phaser.Scene) {}
 
@@ -177,16 +179,30 @@ export class HudController {
       .setDepth(10)
       .setVisible(false);
     this.rageBar = this.scene.add.graphics().setDepth(12).setVisible(false);
+
+    // 护盾指示：装备文字左侧，仅在有护盾时显示
+    this.shieldText = this.scene.add
+      .text(GAME_CENTER_X - gameUnits(430), HUD.y + gameUnits(160), '护盾', {
+        fontFamily: FONT_FAMILY,
+        fontSize: gamePixels(44),
+        color: '#7dd3fc',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setStroke('#0f172a', gameUnits(6))
+      .setDepth(10)
+      .setVisible(false);
   }
 
   update(view: HudView): void {
     this.scoreText.setText(`分数 ${view.score}`);
     this.waveText.setText(String(view.wave));
     const weaponLabel =
-      view.weaponLevel >= POWER_UP.maxWeaponLevel
-        ? '编队 MAX'
-        : `编队 ${view.weaponLevel}`;
+      view.weaponLevel >= EQUIPMENT.max
+        ? `装备 MAX`
+        : `装备 ${view.weaponLevel}/${EQUIPMENT.max}`;
     this.weaponText.setText(weaponLabel);
+    this.shieldText?.setVisible(view.shieldCount > 0);
     this.updateProgressBar(view);
   }
 
