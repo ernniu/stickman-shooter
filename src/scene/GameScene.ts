@@ -1103,7 +1103,6 @@ export class GameScene extends Phaser.Scene {
     this.fx.killStain(x, y);
     this.spawnCoins(x, y);
     floatText(this, x, y - gameUnits(80), `+${ENEMY.score}`, '#fff8dc');
-    this.checkWaveCleared();
   }
 
   /**
@@ -1446,6 +1445,9 @@ export class GameScene extends Phaser.Scene {
     this.walls.update(this.player.x, this.player.y);
     this.boss.update();
     this.syncPerspective();
+    // 片段完成检查必须每帧执行：墙/门/箱子可能不经击杀而被销毁
+    // （越线、离屏），仅靠 killEnemy 触发会卡关。
+    this.checkWaveCleared();
     // 门触发以玩家本体（小队中心）为准：跟随成员不单独触发，
     // 避免 8 人编队宽度变大后同时吃到两个门。
     this.gates.update(deltaSeconds, [this.player]);
