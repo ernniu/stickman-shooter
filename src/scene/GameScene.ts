@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 import {
   BULLET,
   BARREL,
+  BOSS,
   DANGER_LINE_Y,
   ENEMY,
   ENEMY_BULLET,
@@ -24,6 +25,7 @@ import {
   type GateReward,
 } from '@/game/gameConfig';
 import { FxSystem } from '@/game/FxSystem';
+import { BossSystem } from '@/game/BossSystem';
 import { GateSystem } from '@/game/GateSystem';
 import { HudController } from '@/game/HudController';
 import { NumberWallSystem } from '@/game/NumberWallSystem';
@@ -81,6 +83,11 @@ export class GameScene extends Phaser.Scene {
   private readonly walls = new NumberWallSystem(this, {
     onBulletDamage: () => this.currentBulletDamage(),
     onBreach: () => this.damagePlayer(),
+  });
+  private readonly boss = new BossSystem(this, {
+    onBulletDamage: () => this.currentBulletDamage(),
+    onShake: () => this.fx.shakeScreen(),
+    onDefeated: () => this.onBossDefeated(),
   });
   private keys: Partial<
     Record<'LEFT' | 'RIGHT' | 'A' | 'D', Phaser.Input.Keyboard.Key>
@@ -142,6 +149,7 @@ export class GameScene extends Phaser.Scene {
     this.rangedSpawnedThisWave = 0;
     this.gates.reset();
     this.walls.reset();
+    this.boss.clear();
     this.fireTimer = undefined;
     this.spawnTimer = undefined;
     this.nextWaveTimer = undefined;
@@ -370,6 +378,22 @@ export class GameScene extends Phaser.Scene {
       undefined,
       this,
     );
+    // Boss：玩家子弹命中 Boss；Boss 子弹命中玩家（回调与普通敌弹共用）
+    this.physics.add.overlap(
+      this.bullets,
+      this.boss.physicsGroup,
+      (bulletObject, bossObject) =>
+        this.boss.handleBulletHit(bulletObject, bossObject),
+      undefined,
+      this,
+    );
+    this.physics.add.overlap(
+      this.player,
+      this.boss.bulletsGroup,
+      this.onPlayerHitByEnemyBullet,
+      undefined,
+      this,
+    );
   }
 
   /** 波次 / 清空横幅（流程提示，仍由 GameScene 编排）。 */
@@ -438,6 +462,7 @@ export class GameScene extends Phaser.Scene {
       this.input.off(Phaser.Input.Events.POINTER_UP, this.onPointerUp, this);
       this.gates.clear();
       this.walls.clear();
+      this.boss.clear();
       this.fireTimer?.remove();
       this.spawnTimer?.remove();
       this.nextWaveTimer?.remove();
@@ -1135,6 +1160,13 @@ export class GameScene extends Phaser.Scene {
     if (this.nextWaveTimer) {
       return;
     }
+    // 第 startWave 波清空 → 进入 Boss 战（不再生成普通目标，直到 Boss 被击败）
+    if (this.wave === BOSS.startWave && !this.boss.fightStarted) {
+      this.showBanner('BOSS 来袭！');
+      this.boss.startFight();
+      this.updateHud();
+      return;
+    }
     this.showBanner('清空！');
     this.nextWaveTimer = this.time.delayedCall(1100, () => {
       this.nextWaveTimer = undefined;
@@ -1417,6 +1449,7 @@ export class GameScene extends Phaser.Scene {
     this.updateSquadFormation(deltaSeconds);
     this.updateRangedEnemies();
     this.walls.update(this.player.x, this.player.y);
+    this.boss.update();
     this.syncPerspective();
     // 门触发以玩家本体（小队中心）为准：跟随成员不单独触发，
     // 避免 8 人编队宽度变大后同时吃到两个门。
@@ -1572,7 +1605,36 @@ export class GameScene extends Phaser.Scene {
         undefined,
         this,
       );
+      this.physics.add.overlap(
+        follower,
+        this.boss.bulletsGroup,
+        this.onPlayerHitByEnemyBullet,
+        undefined,
+        this,
+      );
     }
+  }
+
+  /** Boss 被击败：固定金币/分数奖励 + 飘字，deathDelayMs 后恢复普通波次。 */
+  private onBossDefeated(): void {
+    this.coins += BOSS.rewardCoins;
+    this.score += BOSS.rewardScore;
+    this.hud.setCoins(this.coins, true);
+    this.updateHud();
+    floatText(
+      this,
+      GAME_CENTER_X,
+      GAME_HEIGHT * 0.4,
+      `BOSS 击败！金币+${BOSS.rewardCoins} 分数+${BOSS.rewardScore}`,
+      '#fde047',
+      { pop: true },
+    );
+    this.time.delayedCall(BOSS.deathDelayMs, () => {
+      if (this.state !== 'playing') {
+        return;
+      }
+      this.startWave(this.wave + 1);
+    });
   }
 
   /** 移除指定下标的跟随成员：连带清理影子、光圈与 tween，避免残留。 */
@@ -1789,6 +1851,7 @@ export class GameScene extends Phaser.Scene {
     this.hud.update({
       score: this.score,
       wave: this.wave,
+      bossFight: this.boss.isFightActive,
       weaponLevel: this.weaponLevel,
       shieldCount: this.shieldCount,
       damageBonus: this.damageBonus,
@@ -1999,6 +2062,8 @@ export class GameScene extends Phaser.Scene {
     }
     this.state = 'over';
     this.pointerId = null;
+    // Game Over：Boss 战相关对象全部清理（血条/子弹/timer/预警 tween）
+    this.boss.clear();
     this.fireTimer?.remove();
     this.spawnTimer?.remove();
     this.nextWaveTimer?.remove();

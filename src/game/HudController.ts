@@ -18,6 +18,7 @@ import { FONT_FAMILY, drawHudPill } from './ui';
 export interface HudView {
   readonly score: number;
   readonly wave: number;
+  readonly bossFight: boolean;
   readonly weaponLevel: number;
   readonly shieldCount: number;
   readonly damageBonus: number;
@@ -212,7 +213,7 @@ export class HudController {
 
   update(view: HudView): void {
     this.scoreText.setText(`分数 ${view.score}`);
-    this.waveText.setText(String(view.wave));
+    this.waveText.setText(view.bossFight ? 'BOSS' : String(view.wave));
     const weaponLabel =
       view.weaponLevel >= EQUIPMENT.max
         ? `装备 MAX`

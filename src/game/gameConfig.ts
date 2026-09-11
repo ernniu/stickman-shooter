@@ -328,6 +328,32 @@ export const NUMBER_WALL = {
   lowHpColorRatio: 0.35,
 } as const;
 
+/** Boss MVP：第 startWave 波清空后进入 Boss 战，击败后恢复普通波次。 */
+export const BOSS = {
+  startWave: 10,
+  hp: 120,
+  width: gameUnits(560),
+  height: gameUnits(560),
+  bodyWidthRatio: 0.8,
+  bodyHeightRatio: 0.75,
+  /** 停留位置（屏幕高度比例，上方 20%~30% 区域）。 */
+  spawnYRatio: 0.24,
+  enterSpeed: gameUnits(420),
+  attackIntervalMs: 2600,
+  telegraphMs: 600,
+  projectileCount: 3,
+  /** 扇形总张角（弧度）。 */
+  projectileSpread: 0.3,
+  projectileSpeed: gameUnits(620),
+  projectileSize: gameUnits(72),
+  rewardCoins: 80,
+  rewardScore: 300,
+  /** 击败后到恢复普通波次的延迟。 */
+  deathDelayMs: 1400,
+  /** 攻击后的输出窗口（弱点高亮时长，本轮仅视觉）。 */
+  weakPointWindowMs: 1000,
+} as const;
+
 /** 跑道增益门（选择门）配置：尺寸、节奏、奖励全部集中在此。 */
 export const GATE = {
   // 生成节奏：从 startWave 开始，每 everyWaves 波一组，且两组间隔不小于 minIntervalMs

@@ -17,6 +17,7 @@ export const TEX = {
   barrel: 'tex-explosive-barrel',
   enemyBullet: 'tex-enemy-bullet',
   numberWall: 'tex-number-wall',
+  boss: 'tex-boss',
   sun: 'tex-sun',
   vignette: 'tex-vignette',
 } as const;
@@ -167,6 +168,37 @@ export const ensureGameTextures = (scene: Phaser.Scene): void => {
     ctx.lineTo(80, 94);
     ctx.lineTo(102, 124);
     ctx.stroke();
+  });
+
+  ensureCanvasTexture(scene, TEX.boss, 128, 128, (ctx) => {
+    // 大型机械怪：红紫装甲 + 独眼 + 底部炮口
+    ctx.fillStyle = '#4c1d95';
+    ctx.fillRect(16, 14, 96, 100);
+    ctx.strokeStyle = '#1e1b4b';
+    ctx.lineWidth = 12;
+    ctx.strokeRect(16, 14, 96, 100);
+    ctx.fillStyle = '#7f1d1d';
+    ctx.fillRect(16, 58, 96, 22);
+    ctx.fillStyle = '#f43f5e';
+    ctx.beginPath();
+    ctx.arc(64, 48, 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(64, 48, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(64, 48, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#312e81';
+    for (const [rx, ry] of [
+      [30, 88],
+      [64, 88],
+      [98, 88],
+    ]) {
+      ctx.fillRect(rx - 8, ry, 16, 16);
+    }
   });
 
   ensureCanvasTexture(scene, TEX.numberWall, 128, 148, (ctx) => {
@@ -325,6 +357,7 @@ export const OPTIONAL_TEX = {
   rangedEnemy: 'enemy_ranged_sprite',
   enemyBullet: 'enemy_bullet_sprite',
   numberWall: 'number_wall_sprite',
+  boss: 'boss_sprite',
 } as const;
 
 export type OptionalTexSlot = keyof typeof OPTIONAL_TEX;
