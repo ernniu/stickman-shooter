@@ -20,9 +20,11 @@ import {
   RUNWAY,
   SQUAD_FORMATION,
   STARTER_FIRE,
+  ENEMY_VARIANTS,
   enemyCountForWave,
   enemyHpForWave,
   enemySpeedForWave,
+  type GateKind,
   type GateReward,
 } from '@/game/gameConfig';
 import { FxSystem } from '@/game/FxSystem';
@@ -59,6 +61,7 @@ import {
   gamePixels,
   gameUnits,
 } from '@/rendering';
+import type { EnemyVariant } from '@/game/gameConfig';
 
 type GameState = 'ready' | 'playing' | 'over';
 
@@ -85,7 +88,11 @@ export class GameScene extends Phaser.Scene {
   private readonly walls = new NumberWallSystem(this, {
     onBulletDamage: () => this.currentBulletDamage(),
     onBreach: () => this.damagePlayer(),
+    onWallDestroyed: (reward) => this.onWallRouteReward(reward),
+    onDpsEstimate: () => this.estimateDps(),
   });
+  /** 本段敌群编排队列：按片段 enemyMix 顺序弹出变体。 */
+  private spawnQueue: EnemyVariant[] = [];
   private readonly boss = new BossSystem(this, {
     onBulletDamage: () => this.currentBulletDamage(),
     onShake: () => this.fx.shakeScreen(),
@@ -502,7 +509,27 @@ export class GameScene extends Phaser.Scene {
       segment.enemyCount ?? enemyCountForWave(segment.difficultyWave);
     this.spawnedThisWave = 0;
     this.rangedSpawnedThisWave = 0;
+    // 敌群编排队列：按片段 enemyMix 固定顺序弹出（不随机），缺省全部普通
+    this.spawnQueue = [];
+    for (const entry of segment.enemyMix ?? []) {
+      for (let i = 0; i < entry.count; i += 1) {
+        this.spawnQueue.push(entry.variant);
+      }
+    }
     this.updateHud();
+    if (import.meta.env.DEV) {
+      const expected = segment.expectedState;
+      console.info(
+        `[Balance] segment=${segmentId} intent=${segment.combatIntent ?? 'n/a'} ` +
+          (expected
+            ? `expected=equip>=${expected.minEquipment} dmg>=${expected.recommendedDamageBonus} aspd>=${expected.recommendedAttackSpeedBonus} shield>=${expected.recommendedShield}`
+            : ''),
+      );
+      console.info(
+        `[Balance] current equipment=${this.weaponLevel} damage=${this.damageBonus} ` +
+          `attackSpeed=${this.attackSpeedBonus} shield=${this.shieldCount}`,
+      );
+    }
 
     if (this.waveTotal > 0) {
       // 批次生成：立即先出一批，之后按批次间隔补齐；同屏达上限自动延后
@@ -520,11 +547,14 @@ export class GameScene extends Phaser.Scene {
       this.spawnPowerUp();
     }
 
-    // 成长门：片段显式配置；支持延迟出现与固定组合（开局首组）
+    // 成长门：片段显式配置；支持延迟出现、固定组合与按缺失成长的智能组合
     if (segment.gatePair) {
+      const kinds =
+        segment.gateFixedKinds ??
+        (segment.gateSmart ? this.pickSmartGateKinds() : undefined);
       const spawnGates = (): void => {
         if (this.state === 'playing') {
-          this.gates.spawnGroupNow(segmentId, segment.gateFixedKinds);
+          this.gates.spawnGroupNow(segmentId, kinds);
         }
       };
       if (segment.gateDelayMs) {
@@ -579,6 +609,35 @@ export class GameScene extends Phaser.Scene {
         shadow?.destroy();
       }
     }
+  }
+
+  /** Boss 前补给门：从当前缺失的成长中随机取两种，保证选择有价值。 */
+  private pickSmartGateKinds(): GateKind[] {
+    const missing: GateKind[] = [];
+    if (this.weaponLevel < POWER_UP.maxWeaponLevel) {
+      missing.push('squad');
+    }
+    if (this.shieldCount < EQUIPMENT.shieldMax) {
+      missing.push('shield');
+    }
+    if (this.damageBonus < GROWTH.damageBonusCap) {
+      missing.push('damage');
+    }
+    if (this.attackSpeedBonus < GROWTH.attackSpeedBonusCap) {
+      missing.push('attackSpeed');
+    }
+    if (missing.length === 0) {
+      return ['squad', 'attackSpeed'];
+    }
+    if (missing.length === 1) {
+      return [missing[0], missing[0] === 'squad' ? 'damage' : 'squad'];
+    }
+    const first = Phaser.Math.Between(0, missing.length - 1);
+    let second = Phaser.Math.Between(0, missing.length - 2);
+    if (second >= first) {
+      second += 1;
+    }
+    return [missing[first], missing[second]];
   }
 
   /** 生成透视跑道内的目标 x 坐标（顶部外侧生成，随跑道下移）。 */
@@ -717,6 +776,13 @@ export class GameScene extends Phaser.Scene {
       this.rangedSpawnedThisWave += 1;
     }
 
+    // 敌群编排：按队列弹出变体；armored/runner 使用专属 hp/速度/体型/tint/分数
+    const variant = this.spawnQueue.shift() ?? 'normal';
+    const variantSpec =
+      variant === 'normal' ? undefined : ENEMY_VARIANTS[variant];
+    const variantScale = variantSpec?.scaleRatio ?? 1;
+    const variantSpeed = variantSpec?.speedRatio ?? 1;
+
     const enemyTexture = isRanged
       ? resolveTexture(this, 'rangedEnemy', TEX.enemy)
       : resolveTexture(this, 'enemy', TEX.enemy);
@@ -729,10 +795,15 @@ export class GameScene extends Phaser.Scene {
     enemy.setData('swingPhase', Math.random() * Math.PI * 2);
     enemy.setData('segmentId', this.levelFlow.segmentId);
     enemy
-      .setDisplaySize(ENEMY.width, ENEMY.height)
+      .setDisplaySize(ENEMY.width * variantScale, ENEMY.height * variantScale)
       .setDepth(getDepthAtY(spawnY));
     // 记录基准缩放，透视缩放 = baseScale × getPerspectiveScaleAtY(y)
     enemy.setData('baseScale', enemy.scaleX);
+    enemy.setData('score', variantSpec?.score ?? ENEMY.score);
+    if (variantSpec?.tint != null) {
+      enemy.setData('baseTint', variantSpec.tint);
+      enemy.setTint(variantSpec.tint);
+    }
     if (isRanged) {
       // 远程敌人：紫 tint + 紫血条 + 额外血量 + 减速下落 + 停留点
       enemy.setData('ranged', true);
@@ -753,7 +824,7 @@ export class GameScene extends Phaser.Scene {
     );
     enemy.setVelocityY(
       enemySpeedForWave(this.wave) *
-        (isRanged ? RANGED_ENEMY.speedRatio : 1),
+        (isRanged ? RANGED_ENEMY.speedRatio : variantSpeed),
     );
     // 自定义素材为单帧，不播放程序化跑步动画
     if (enemyTexture === TEX.enemy) {
@@ -766,12 +837,12 @@ export class GameScene extends Phaser.Scene {
     shadow.setPosition(spawnX, spawnY + ENEMY.height * 0.44);
     enemy.setData('shadow', shadow);
 
-    // 头顶血量：低血群固定 1 血；片段 hpOverride 优先；远程敌人有额外血量。
-    let hp = enemyHpForWave(this.wave);
-    if (segment.lowHpSwarm) {
+    // 头顶血量：变体 hp 优先（swarm/armored/runner）；远程敌人有额外血量。
+    let hp = variantSpec ? variantSpec.hp : enemyHpForWave(this.wave);
+    if (segment.lowHpSwarm && !variantSpec) {
       hp = 1;
     }
-    if (segment.hpOverride !== undefined) {
+    if (segment.hpOverride !== undefined && !variantSpec) {
       hp = segment.hpOverride;
     }
     if (isRanged) {
@@ -1201,12 +1272,13 @@ export class GameScene extends Phaser.Scene {
   private killEnemy(enemy: Phaser.Physics.Arcade.Sprite): void {
     const x = enemy.x;
     const y = enemy.y;
+    const score = (enemy.getData('score') as number) ?? ENEMY.score;
     this.destroyEnemySilently(enemy, x, y);
-    this.score += ENEMY.score;
+    this.score += score;
     this.updateHud();
     this.fx.killStain(x, y);
     this.spawnCoins(x, y);
-    floatText(this, x, y - gameUnits(80), `+${ENEMY.score}`, '#fff8dc');
+    floatText(this, x, y - gameUnits(80), `+${score}`, '#fff8dc');
   }
 
   /**
@@ -1735,6 +1807,29 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** 高收益墙被打碎的路线奖励：金币或生成奖励箱（安全墙无奖励）。 */
+  private onWallRouteReward(reward: 'none' | 'coin' | 'reward-box'): void {
+    if (reward === 'coin') {
+      this.coins += 40;
+      this.hud.setCoins(this.coins, true);
+      floatText(this, GAME_CENTER_X, GAME_HEIGHT * 0.3, '金币 +40！', '#facc15', {
+        pop: true,
+      });
+      return;
+    }
+    if (reward === 'reward-box') {
+      this.spawnRewardBox();
+      floatText(this, GAME_CENTER_X, GAME_HEIGHT * 0.3, '奖励箱掉落！', '#fbbf24', {
+        pop: true,
+      });
+    }
+  }
+
+  /** 理论 DPS = 装备数 × 单发伤害 ÷ 射击间隔（Balance 日志与墙参数调参用）。 */
+  private estimateDps(): number {
+    const intervalSec = this.currentFireInterval() / 1000;
+    return (this.weaponLevel * this.currentBulletDamage()) / Math.max(intervalSec, 0.001);
+  }
   /** Boss 被击败：固定奖励 + 飘字，deathDelayMs 后进入关卡完成结算页。 */
   private onBossDefeated(): void {
     this.coins += BOSS.rewardCoins;

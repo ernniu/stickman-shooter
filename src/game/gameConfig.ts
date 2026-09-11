@@ -71,6 +71,39 @@ export const ENEMY = {
 export const enemyHpForWave = (wave: number): number =>
   ENEMY.baseHp + Math.floor((wave - 1) / ENEMY.hpWaveStep);
 
+/**
+ * 敌人战斗变体（复用 Enemy 结构与素材 fallback，无新素材）：
+ * swarm 验证装备/攻速；armored 验证伤害；runner 施加走位压力。
+ */
+export type EnemyVariant = 'normal' | 'swarm' | 'armored' | 'runner';
+
+export const ENEMY_VARIANTS: Record<
+  Exclude<EnemyVariant, 'normal'>,
+  {
+    readonly hp: number;
+    readonly speedRatio: number;
+    readonly scaleRatio: number;
+    readonly score: number;
+    readonly tint: number | null;
+  }
+> = {
+  swarm: { hp: 1, speedRatio: 1, scaleRatio: 1, score: 10, tint: null },
+  armored: {
+    hp: 6,
+    speedRatio: 0.55,
+    scaleRatio: 1.25,
+    score: 25,
+    tint: 0x7f1d1d,
+  },
+  runner: {
+    hp: 2,
+    speedRatio: 1.6,
+    scaleRatio: 0.9,
+    score: 15,
+    tint: 0xf97316,
+  },
+};
+
 /** 打击与视觉反馈参数（只影响表现，不改变玩法数值）。 */
 export const FEEDBACK = {
   // 受击：闪白 + 轻微放大的持续时长

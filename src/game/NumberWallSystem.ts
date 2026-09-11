@@ -6,17 +6,29 @@ import { TEX, resolveTexture } from './textures';
 import { FONT_FAMILY } from './ui';
 import {
   GAME_CENTER_X,
+  GAME_HEIGHT,
   GAME_WIDTH,
   addGameText,
   gamePixels,
   gameUnits,
 } from '@/rendering';
 
+export type WallReward = 'none' | 'coin' | 'reward-box';
+
+export interface WallSpec {
+  readonly hps: ReadonlyArray<number>;
+  readonly rewards?: ReadonlyArray<WallReward>;
+}
+
 interface NumberWallHooks {
   /** 当前单发子弹伤害（GameScene 注入，含成长加成）。 */
   onBulletDamage(): number;
   /** 墙体突破（越线或触碰玩家中心）时扣装备。 */
   onBreach(): void;
+  /** 高收益墙被打破（仅打破，突破不给）时的路线奖励。 */
+  onWallDestroyed(reward: WallReward): void;
+  /** 理论 DPS 估算（装备数 × 单发伤害 ÷ 射击间隔），供 Balance 日志。 */
+  onDpsEstimate(): number;
 }
 
 /** 墙体 tint 状态色：满血红 → 中血橙 → 低血灰暗。 */
@@ -206,37 +218,67 @@ export class NumberWallSystem {
     return this.group ? this.group.countActive(true) : 0;
   }
 
-  /** 关卡片段直接生成墙（跳过概率/避让，仅保留同屏上限）。 */
+  /** 关卡片段直接生成墙：wallSpec 优先（精确 hp/奖励），否则按波次公式。 */
   spawnForced(
     mode: 'none' | 'single' | 'double',
     wave: number,
     segmentId?: number,
+    spec?: WallSpec,
   ): void {
     if (mode === 'none' || this.countActive() >= NUMBER_WALL.maxOnScreen) {
       return;
     }
-    const baseHp = Math.min(
+    const formulaHp = Math.min(
       NUMBER_WALL.maxHpCap,
       NUMBER_WALL.baseHp + NUMBER_WALL.hpPerWave * (wave - 1),
     );
+    const hpAt = (index: number): number =>
+      spec?.hps[index] ?? formulaHp;
+    const rewardAt = (index: number): WallReward =>
+      spec?.rewards?.[index] ?? 'none';
+
+    if (import.meta.env.DEV) {
+      const timeToDanger = (DANGER_LINE_Y + NUMBER_WALL.height) / NUMBER_WALL.speed;
+      const dps = this.hooks.onDpsEstimate();
+      const count = mode === 'double' ? 2 : 1;
+      for (let index = 0; index < count; index += 1) {
+        const hp = hpAt(index);
+        console.info(
+          `[Balance] wall hp=${hp} timeToDanger=${timeToDanger.toFixed(1)}s ` +
+            `estimatedDps=${dps.toFixed(1)} estimatedKillTime=${(hp / Math.max(dps, 0.1)).toFixed(1)}s`,
+        );
+      }
+    }
+
     if (mode === 'double') {
       const baseX =
         GAME_CENTER_X - NUMBER_WALL.doubleLaneU * GAME_WIDTH * 0.5;
       const offsetX = NUMBER_WALL.doubleLaneU * GAME_WIDTH * 0.5;
-      this.spawnWall(baseX, baseHp * NUMBER_WALL.doubleHpScale[0], segmentId);
+      this.spawnWall(
+        baseX,
+        hpAt(0),
+        segmentId,
+        rewardAt(0),
+      );
       this.spawnWall(
         baseX + offsetX * 2,
-        baseHp * NUMBER_WALL.doubleHpScale[1],
+        hpAt(1),
         segmentId,
+        rewardAt(1),
       );
     } else {
       const x =
         GAME_CENTER_X + Phaser.Math.FloatBetween(-0.5, 0.5) * GAME_WIDTH * 0.5;
-      this.spawnWall(x, baseHp, segmentId);
+      this.spawnWall(x, hpAt(0), segmentId, rewardAt(0));
     }
   }
 
-  private spawnWall(x: number, hp: number, segmentId?: number): void {
+  private spawnWall(
+    x: number,
+    hp: number,
+    segmentId?: number,
+    reward: WallReward = 'none',
+  ): void {
     const spawnY = -NUMBER_WALL.height;
     const texture = resolveTexture(this.scene, 'numberWall', TEX.numberWall);
     const wall = this.physicsGroup.create(x, spawnY, texture) as
@@ -250,6 +292,7 @@ export class NumberWallSystem {
     if (segmentId !== undefined) {
       wall.setData('segmentId', segmentId);
     }
+    wall.setData('reward', reward);
     (wall.body as Phaser.Physics.Arcade.Body).setSize(
       NUMBER_WALL.width * NUMBER_WALL.bodyWidthRatio,
       NUMBER_WALL.height * NUMBER_WALL.bodyHeightRatio,
@@ -302,12 +345,16 @@ export class NumberWallSystem {
     );
   }
 
-  /** 打破墙体：碎裂特效 + 销毁（不掉金币、不影响清波计数）。 */
+  /** 打破墙体：碎裂特效 + 销毁；高收益墙触发路线奖励（突破不给）。 */
   private shatterWall(wall: Phaser.Physics.Arcade.Sprite): void {
     const x = wall.x;
     const y = wall.y;
+    const reward = (wall.getData('reward') as WallReward) ?? 'none';
     this.destroyWall(wall);
     this.shatterFx(x, y);
+    if (reward !== 'none') {
+      this.hooks.onWallDestroyed(reward);
+    }
   }
 
   private destroyWall(wall: Phaser.Physics.Arcade.Sprite): void {

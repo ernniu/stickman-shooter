@@ -3,7 +3,7 @@
  * 第一关固定 8 段：战斗 → 选择 → 奖励 → 战斗 → Boss。
  */
 
-import type { GateKind } from './gameConfig';
+import type { EnemyVariant, GateKind } from './gameConfig';
 
 export type SegmentType =
   | 'combat'
@@ -53,6 +53,37 @@ export interface LevelSegment {
   readonly barrels?: number;
   /** 数字墙形态。 */
   readonly wallsMode?: 'none' | 'single' | 'double';
+  /**
+   * 墙体规格（优先于波次公式）：每道墙 hp 与打破后的路线奖励。
+   * rewards 与 hps 按下标对应；'none' 安全路线、'coin'/'reward-box' 高收益路线。
+   */
+  readonly wallSpec?: {
+    readonly hps: ReadonlyArray<number>;
+    readonly rewards?: ReadonlyArray<'none' | 'coin' | 'reward-box'>;
+  };
+  /** 敌群编排：按配置顺序固定生成（不随机），缺省全部普通敌人。 */
+  readonly enemyMix?: ReadonlyArray<{
+    readonly variant: EnemyVariant;
+    readonly count: number;
+  }>;
+  /** 设计意图（仅供开发日志与关卡设计说明，不参与任何运行时数值）。 */
+  readonly combatIntent?:
+    | 'intro'
+    | 'swarm'
+    | 'armor'
+    | 'mixed'
+    | 'ranged'
+    | 'wall-check'
+    | 'boss-prep';
+  /** 期望玩家在进入本段时的成长状态（仅日志说明用）。 */
+  readonly expectedState?: {
+    readonly minEquipment: number;
+    readonly recommendedDamageBonus: number;
+    readonly recommendedAttackSpeedBonus: number;
+    readonly recommendedShield: number;
+  };
+  /** Boss 前补给门：按玩家当前缺失的成长动态出有价值的组合。 */
+  readonly gateSmart?: boolean;
   readonly completion: SegmentCompletion;
 }
 
@@ -65,13 +96,20 @@ export const LEVEL_1: ReadonlyArray<LevelSegment> = [
   {
     type: 'combat',
     hint: '迎战第一波敌群！',
+    combatIntent: 'intro',
+    expectedState: {
+      minEquipment: 2,
+      recommendedDamageBonus: 0,
+      recommendedAttackSpeedBonus: 0,
+      recommendedShield: 0,
+    },
     difficultyWave: 1,
     enemyCount: 14,
+    enemyMix: [{ variant: 'swarm', count: 14 }],
     spawnBatchSize: 5,
     spawnBatchIntervalMs: 380,
     spawnYRange: { top: 0.08, bottom: 0.2 },
     spawnWide: true,
-    lowHpSwarm: true,
     gatePair: true,
     gateDelayMs: 7000,
     gateFixedKinds: ['squad', 'attackSpeed'],
@@ -80,32 +118,61 @@ export const LEVEL_1: ReadonlyArray<LevelSegment> = [
   {
     type: 'reward',
     hint: '击破宝箱获取补给！',
+    combatIntent: 'swarm',
+    expectedState: {
+      minEquipment: 3,
+      recommendedDamageBonus: 0,
+      recommendedAttackSpeedBonus: 0.2,
+      recommendedShield: 0,
+    },
     difficultyWave: 2,
     enemyCount: 18,
+    enemyMix: [{ variant: 'swarm', count: 18 }],
     spawnBatchSize: 5,
     spawnBatchIntervalMs: 400,
     spawnYRange: { top: 0.08, bottom: 0.2 },
     spawnWide: true,
-    lowHpSwarm: true,
     rewardBox: true,
     completion: 'reward-resolved',
   },
   {
     type: 'gate',
-    hint: '选择你的成长方向！',
+    hint: '装甲怪来袭，火力不足会很难受！',
+    combatIntent: 'armor',
+    expectedState: {
+      minEquipment: 3,
+      recommendedDamageBonus: 0.3,
+      recommendedAttackSpeedBonus: 0.2,
+      recommendedShield: 0,
+    },
     difficultyWave: 3,
-    enemyCount: 20,
+    enemyCount: 17,
+    enemyMix: [
+      { variant: 'swarm', count: 14 },
+      { variant: 'armored', count: 3 },
+    ],
     spawnBatchSize: 5,
     spawnBatchIntervalMs: 420,
     spawnYRange: { top: 0.08, bottom: 0.2 },
     spawnWide: true,
-    completion: 'gate-resolved',
+    completion: 'enemies-cleared',
   },
   {
     type: 'ranged',
     hint: '躲避子弹，善用爆炸桶！',
+    combatIntent: 'ranged',
+    expectedState: {
+      minEquipment: 3,
+      recommendedDamageBonus: 0.3,
+      recommendedAttackSpeedBonus: 0.2,
+      recommendedShield: 1,
+    },
     difficultyWave: 4,
     enemyCount: 24,
+    enemyMix: [
+      { variant: 'swarm', count: 18 },
+      { variant: 'runner', count: 4 },
+    ],
     spawnBatchSize: 6,
     spawnBatchIntervalMs: 420,
     spawnYRange: { top: 0.08, bottom: 0.2 },
@@ -116,36 +183,68 @@ export const LEVEL_1: ReadonlyArray<LevelSegment> = [
   },
   {
     type: 'walls',
-    hint: '打穿数字墙，选择路线！',
+    hint: '低墙安全通过，高墙内有奖励！',
+    combatIntent: 'wall-check',
+    expectedState: {
+      minEquipment: 4,
+      recommendedDamageBonus: 0.3,
+      recommendedAttackSpeedBonus: 0.2,
+      recommendedShield: 1,
+    },
     difficultyWave: 5,
     enemyCount: 14,
+    enemyMix: [{ variant: 'swarm', count: 14 }],
     spawnBatchSize: 4,
     spawnBatchIntervalMs: 450,
     wallsMode: 'double',
+    wallSpec: { hps: [8, 20], rewards: ['none', 'reward-box'] },
     gatePair: true,
     completion: 'walls-resolved',
   },
   {
     type: 'combat',
     hint: '高压敌群！坚持住！',
+    combatIntent: 'mixed',
+    expectedState: {
+      minEquipment: 5,
+      recommendedDamageBonus: 0.6,
+      recommendedAttackSpeedBonus: 0.4,
+      recommendedShield: 1,
+    },
     difficultyWave: 5,
-    enemyCount: 42,
+    enemyCount: 44,
+    enemyMix: [
+      { variant: 'swarm', count: 34 },
+      { variant: 'armored', count: 6 },
+      { variant: 'runner', count: 4 },
+    ],
     spawnBatchSize: 6,
     spawnBatchIntervalMs: 380,
     spawnYRange: { top: 0.08, bottom: 0.2 },
     spawnWide: true,
-    hpOverride: 3,
     rewardBox: true,
     completion: 'reward-resolved',
   },
   {
     type: 'gate',
     hint: 'Boss 前的最后成长！',
+    combatIntent: 'boss-prep',
+    expectedState: {
+      minEquipment: 6,
+      recommendedDamageBonus: 0.9,
+      recommendedAttackSpeedBonus: 0.6,
+      recommendedShield: 1,
+    },
     difficultyWave: 8,
     enemyCount: 16,
+    enemyMix: [
+      { variant: 'swarm', count: 12 },
+      { variant: 'armored', count: 2 },
+    ],
     spawnBatchSize: 4,
     spawnBatchIntervalMs: 450,
     gatePair: true,
+    gateSmart: true,
     completion: 'gate-resolved',
   },
   {
