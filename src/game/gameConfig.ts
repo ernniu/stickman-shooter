@@ -273,6 +273,38 @@ export const BARREL = {
   blastRadius: gameUnits(560),
 } as const;
 
+/** 远程敌人：停留中上部周期攻击，紫色 tint + 紫色血条区分。 */
+export const RANGED_ENEMY = {
+  startWave: 4,
+  /** 每波出现概率（且每波最多 maxPerWave 个）。 */
+  spawnChance: 0.5,
+  maxPerWave: 1,
+  /** 在普通敌人血量基础上额外增加的血量。 */
+  hpBonus: 2,
+  /** 下落速度 = 普通敌人速度 × 此系数。 */
+  speedRatio: 0.7,
+  /** 停留区域：屏幕高度比例上沿与下沿（中上部）。 */
+  stopYTopRatio: 0.18,
+  stopYBottomRatio: 0.32,
+  /** 停留超过此时长后缓慢向下推进（毫秒）。 */
+  resumePushMs: 12000,
+  resumePushSpeedRatio: 0.3,
+  fireIntervalMs: 2000,
+  /** 开火预警时长（毫秒）：闪红脉冲，结束后才发射。 */
+  telegraphMs: 400,
+  /** 区分用 tint（紫）。 */
+  tint: 0x9333ea,
+} as const;
+
+/** 敌方子弹：慢速下落能量弹，命中玩家/成员走 damagePlayer 结算。 */
+export const ENEMY_BULLET = {
+  /** 速度 = 当前波普通敌人下落速度 × 此系数。 */
+  speedRatio: 4,
+  size: gameUnits(56),
+  bodyRatio: 0.7,
+  maxOnScreen: 6,
+} as const;
+
 /** 跑道增益门（选择门）配置：尺寸、节奏、奖励全部集中在此。 */
 export const GATE = {
   // 生成节奏：从 startWave 开始，每 everyWaves 波一组，且两组间隔不小于 minIntervalMs

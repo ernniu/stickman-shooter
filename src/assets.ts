@@ -22,6 +22,8 @@ export const OPTIONAL_IMAGES: Record<string, string> = {
   hit_spark_sprite: 'assets/image/hit_spark_sprite.png',
   reward_box_sprite: 'assets/image/reward_box_sprite.png',
   explosive_barrel_sprite: 'assets/image/explosive_barrel_sprite.png',
+  enemy_ranged_sprite: 'assets/image/enemy_ranged_sprite.png',
+  enemy_bullet_sprite: 'assets/image/enemy_bullet_sprite.png',
 };
 
 export const IMAGE_SEQUENCES: Record<string, string> = {

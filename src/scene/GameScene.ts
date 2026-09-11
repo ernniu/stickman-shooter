@@ -5,11 +5,13 @@ import {
   BARREL,
   DANGER_LINE_Y,
   ENEMY,
+  ENEMY_BULLET,
   EQUIPMENT,
   FEEDBACK,
   GATE,
   GROWTH,
   PLAYER,
+  RANGED_ENEMY,
   REWARD_BOX,
   PLAYER_Y,
   POWER_UP,
@@ -64,6 +66,7 @@ export class GameScene extends Phaser.Scene {
   private powerUps!: Phaser.Physics.Arcade.Group;
   private rewardBoxes!: Phaser.Physics.Arcade.Group;
   private barrels!: Phaser.Physics.Arcade.Group;
+  private enemyBullets!: Phaser.Physics.Arcade.Group;
   private banner!: Phaser.GameObjects.Text;
   private playerShadow?: Phaser.GameObjects.Ellipse;
   private cloudField?: CloudField;
@@ -99,6 +102,8 @@ export class GameScene extends Phaser.Scene {
   // 成长强化：基础值 + 累积加成（非复利），上限见 GROWTH
   private damageBonus = 0;
   private attackSpeedBonus = 0;
+  // 本波已生成的远程敌人数（每波上限见 RANGED_ENEMY.maxPerWave）
+  private rangedSpawnedThisWave = 0;
   // 手指拖动：只跟踪第一根手指；dragOffsetX 记录按下瞬间玩家与手指的相对偏移。
   private pointerId: number | null = null;
   private dragOffsetX = 0;
@@ -129,6 +134,7 @@ export class GameScene extends Phaser.Scene {
     this.invincibleUntil = 0;
     this.damageBonus = 0;
     this.attackSpeedBonus = 0;
+    this.rangedSpawnedThisWave = 0;
     this.gates.reset();
     this.fireTimer = undefined;
     this.spawnTimer = undefined;
@@ -306,6 +312,7 @@ export class GameScene extends Phaser.Scene {
     this.powerUps = this.physics.add.group();
     this.rewardBoxes = this.physics.add.group();
     this.barrels = this.physics.add.group();
+    this.enemyBullets = this.physics.add.group();
 
     this.physics.add.overlap(
       this.bullets,
@@ -339,6 +346,13 @@ export class GameScene extends Phaser.Scene {
       this.player,
       this.enemies,
       this.onPlayerTouchedByEnemy,
+      undefined,
+      this,
+    );
+    this.physics.add.overlap(
+      this.player,
+      this.enemyBullets,
+      this.onPlayerHitByEnemyBullet,
       undefined,
       this,
     );
@@ -424,6 +438,7 @@ export class GameScene extends Phaser.Scene {
     this.wave = wave;
     this.waveTotal = enemyCountForWave(wave);
     this.spawnedThisWave = 0;
+    this.rangedSpawnedThisWave = 0;
     this.updateHud();
     this.showBanner(`第 ${wave} 波`);
 
@@ -574,7 +589,18 @@ export class GameScene extends Phaser.Scene {
       spawnBounds.left + edge,
       spawnBounds.right - edge,
     );
-    const enemyTexture = resolveTexture(this, 'enemy', TEX.enemy);
+    // 远程敌人判定：起始波后按概率出现，每波最多 maxPerWave 个
+    const isRanged =
+      this.wave >= RANGED_ENEMY.startWave &&
+      this.rangedSpawnedThisWave < RANGED_ENEMY.maxPerWave &&
+      Math.random() < RANGED_ENEMY.spawnChance;
+    if (isRanged) {
+      this.rangedSpawnedThisWave += 1;
+    }
+
+    const enemyTexture = isRanged
+      ? resolveTexture(this, 'rangedEnemy', TEX.enemy)
+      : resolveTexture(this, 'enemy', TEX.enemy);
     const enemy = this.enemies.create(
       spawnX,
       spawnY,
@@ -587,12 +613,28 @@ export class GameScene extends Phaser.Scene {
       .setDepth(getDepthAtY(ENEMY.spawnTopY));
     // 记录基准缩放，透视缩放 = baseScale × getPerspectiveScaleAtY(y)
     enemy.setData('baseScale', enemy.scaleX);
+    if (isRanged) {
+      // 远程敌人：紫 tint + 紫血条 + 额外血量 + 减速下落 + 停留点
+      enemy.setData('ranged', true);
+      enemy.setData('baseTint', RANGED_ENEMY.tint);
+      enemy.setTint(RANGED_ENEMY.tint);
+      enemy.setData(
+        'stopY',
+        GAME_HEIGHT *
+          (RANGED_ENEMY.stopYTopRatio +
+            Math.random() *
+              (RANGED_ENEMY.stopYBottomRatio - RANGED_ENEMY.stopYTopRatio)),
+      );
+    }
     this.setBodySize(
       enemy,
       ENEMY.width * ENEMY.bodyWidthRatio,
       ENEMY.height * ENEMY.bodyHeightRatio,
     );
-    enemy.setVelocityY(enemySpeedForWave(this.wave));
+    enemy.setVelocityY(
+      enemySpeedForWave(this.wave) *
+        (isRanged ? RANGED_ENEMY.speedRatio : 1),
+    );
     // 自定义素材为单帧，不播放程序化跑步动画
     if (enemyTexture === TEX.enemy) {
       enemy.play('enemy-run');
@@ -604,8 +646,8 @@ export class GameScene extends Phaser.Scene {
     shadow.setPosition(spawnX, spawnY + ENEMY.height * 0.44);
     enemy.setData('shadow', shadow);
 
-    // 头顶血量数字：跟随敌人下落，受击时逐发扣减。
-    const hp = enemyHpForWave(this.wave);
+    // 头顶血量数字：跟随敌人下落，受击时逐发扣减。远程敌人有额外血量。
+    const hp = enemyHpForWave(this.wave) + (isRanged ? RANGED_ENEMY.hpBonus : 0);
     enemy.setData('hp', hp);
     const hpText = addGameText(
       this,
@@ -633,7 +675,13 @@ export class GameScene extends Phaser.Scene {
       .rectangle(spawnX, barY, barWidth, barHeight, 0x2b1b1b, 0.55)
       .setDepth(getDepthAtY(spawnY) + 0.06);
     const barFill = this.add
-      .rectangle(spawnX - barWidth / 2, barY, barWidth, barHeight, 0x7ee081)
+      .rectangle(
+        spawnX - barWidth / 2,
+        barY,
+        barWidth,
+        barHeight,
+        isRanged ? 0xa78bfa : 0x7ee081,
+      )
       .setOrigin(0, 0.5)
       .setDepth(getDepthAtY(spawnY) + 0.07);
     enemy.setData('hpBarBg', barBg);
@@ -875,13 +923,20 @@ export class GameScene extends Phaser.Scene {
     this.explodeBarrel(barrel);
   }
 
-  /** 开奖励箱：装备+1（未满）→ 护盾+1（无盾）→ 金币；满装备沿用狂暴+金币规则。 */
+  /**
+   * 开奖励箱，奖励优先级：
+   * 1. 装备未满 → 装备 +1
+   * 2. 装备已满且非狂暴 → 触发狂暴（不在狂暴中触发，天然不会叠加时长）
+   * 3. 装备已满且狂暴中、护盾未满 → 护盾 +1
+   * 4. 装备已满、狂暴中、护盾已满 → 金币 +20
+   */
   private openRewardBox(box: Phaser.Physics.Arcade.Sprite): void {
     const x = box.x;
     const y = box.y;
     this.destroyTargetWithShadow(box);
     this.fx.deathBurst(x, y);
 
+    // 1. 装备未满：装备 +1
     if (this.weaponLevel < POWER_UP.maxWeaponLevel) {
       this.weaponLevel += 1;
       this.syncSquad();
@@ -889,19 +944,24 @@ export class GameScene extends Phaser.Scene {
       floatText(this, x, y, '装备 +1！', '#38bdf8', { pop: true });
       return;
     }
+
+    // 2. 装备已满且非狂暴：触发狂暴（沿用满装备 +1 的现有爽感规则）
+    if (!this.isRaging()) {
+      this.startRage();
+      floatText(this, x, y, GATE.squadFullToast, '#fbbf24', { pop: true });
+      return;
+    }
+
+    // 3. 满编且狂暴中、护盾未满：护盾 +1（applyShield 自带飘字与 HUD 更新）
     if (this.shieldCount < EQUIPMENT.shieldMax) {
       this.applyShield();
       return;
     }
-    // 装备与护盾均已满：转为金币奖励
+
+    // 4. 满编、狂暴中、护盾已满：金币 +20
     this.coins += REWARD_BOX.coinReward;
     this.hud.setCoins(this.coins, true);
-    this.spawnCoins(
-      x,
-      y,
-      2,
-      REWARD_BOX.coinReward / 2,
-    );
+    this.spawnCoins(x, y, 2, REWARD_BOX.coinReward / 2);
     floatText(
       this,
       x,
@@ -956,7 +1016,8 @@ export class GameScene extends Phaser.Scene {
       enemy.setTintFill(0xffffff);
       this.time.delayedCall(Math.round(FEEDBACK.hitFlashMs * 0.75), () => {
         if (enemy.active) {
-          enemy.clearTint();
+          // 恢复到该敌人的固有 tint（远程敌人保持紫色区分）
+          enemy.setTint((enemy.getData('baseTint') as number) ?? 0xffffff);
         }
       });
       if (hpText?.active) {
@@ -1014,6 +1075,11 @@ export class GameScene extends Phaser.Scene {
     x: number,
     y: number,
   ): void {
+    // 远程敌人死亡：先停攻击定时器，避免死亡后仍发射敌弹
+    const fireTimer = enemy.getData('fireTimer') as
+      | Phaser.Time.TimerEvent
+      | undefined;
+    fireTimer?.remove();
     const hpText = enemy.getData('hpText') as
       | Phaser.GameObjects.Text
       | undefined;
@@ -1191,6 +1257,118 @@ export class GameScene extends Phaser.Scene {
     this.destroyEnemySilently(enemy, x, y);
   }
 
+  /** 远程敌人：到达停留点停住并开始攻击；停留过久则缓慢向下推进。 */
+  private updateRangedEnemies(): void {
+    for (const child of this.enemies.getChildren()) {
+      const enemy = child as Phaser.Physics.Arcade.Sprite;
+      if (!enemy.active || !enemy.getData('ranged') || enemy.getData('dying')) {
+        continue;
+      }
+      const arrivedAt = enemy.getData('arrivedAt') as number | undefined;
+      if (arrivedAt === undefined) {
+        const stopY = enemy.getData('stopY') as number | undefined;
+        if (stopY !== undefined && enemy.y >= stopY) {
+          enemy.setVelocityY(0);
+          enemy.setData('arrivedAt', this.time.now);
+          this.startRangedFire(enemy);
+        }
+        continue;
+      }
+      // 停留过久：缓慢向下推进，最终会触发危险线扣装备
+      const body = enemy.body as Phaser.Physics.Arcade.Body;
+      if (
+        this.time.now - arrivedAt > RANGED_ENEMY.resumePushMs &&
+        body.velocity.y === 0
+      ) {
+        enemy.setVelocityY(
+          enemySpeedForWave(this.wave) * RANGED_ENEMY.resumePushSpeedRatio,
+        );
+      }
+    }
+  }
+
+  /** 启动远程敌人周期攻击（首次开火在一个间隔之后）。 */
+  private startRangedFire(enemy: Phaser.Physics.Arcade.Sprite): void {
+    if (enemy.getData('fireTimer')) {
+      return;
+    }
+    const fireTimer = this.time.addEvent({
+      delay: RANGED_ENEMY.fireIntervalMs,
+      loop: true,
+      callback: () => this.telegraphRangedShot(enemy),
+    });
+    enemy.setData('fireTimer', fireTimer);
+  }
+
+  /** 开火预警：闪红脉冲 telegraphMs，结束后才发射；死亡/结束时自动复位。 */
+  private telegraphRangedShot(enemy: Phaser.Physics.Arcade.Sprite): void {
+    if (this.state !== 'playing' || !enemy.active || enemy.getData('dying')) {
+      return;
+    }
+    const baseTint = (enemy.getData('baseTint') as number) ?? 0xffffff;
+    enemy.setTintFill(0xff5555);
+    this.tweens.add({
+      targets: enemy,
+      alpha: { from: 1, to: 0.45 },
+      duration: RANGED_ENEMY.telegraphMs / 2,
+      yoyo: true,
+      repeat: 1,
+      onComplete: () => {
+        if (enemy.active) {
+          enemy.setAlpha(1);
+          enemy.setTint(baseTint);
+        }
+      },
+    });
+    this.time.delayedCall(RANGED_ENEMY.telegraphMs, () => {
+      this.fireEnemyBullet(enemy);
+    });
+  }
+
+  /** 发射敌方子弹：慢速下飞，同屏上限受 ENEMY_BULLET.maxOnScreen 限制。 */
+  private fireEnemyBullet(enemy: Phaser.Physics.Arcade.Sprite): void {
+    if (this.state !== 'playing' || !enemy.active || enemy.getData('dying')) {
+      return;
+    }
+    if (this.enemyBullets.countActive(true) >= ENEMY_BULLET.maxOnScreen) {
+      return;
+    }
+    const texture = resolveTexture(this, 'enemyBullet', TEX.enemyBullet);
+    const bullet = this.enemyBullets.create(
+      enemy.x,
+      enemy.y + ENEMY.height * 0.4,
+      texture,
+    ) as Phaser.Physics.Arcade.Sprite;
+    bullet
+      .setDisplaySize(ENEMY_BULLET.size, ENEMY_BULLET.size)
+      .setDepth(getDepthAtY(enemy.y) + 0.2);
+    this.setBodySize(
+      bullet,
+      ENEMY_BULLET.size * ENEMY_BULLET.bodyRatio,
+      ENEMY_BULLET.size * ENEMY_BULLET.bodyRatio,
+    );
+    bullet.setVelocityY(enemySpeedForWave(this.wave) * ENEMY_BULLET.speedRatio);
+  }
+
+  /**
+   * 敌方子弹命中玩家/成员：子弹一律销毁（防一弹多结算），
+   * 是否扣装备由 damagePlayer 决定（护盾/无敌/Game Over 全复用现有逻辑）。
+   */
+  private onPlayerHitByEnemyBullet(
+    _memberObject: unknown,
+    bulletObject: unknown,
+  ): void {
+    if (this.state !== 'playing') {
+      return;
+    }
+    const bullet = bulletObject as Phaser.Physics.Arcade.Sprite;
+    if (!bullet.active) {
+      return;
+    }
+    bullet.destroy();
+    this.damagePlayer();
+  }
+
   update(_time: number, delta: number): void {
     const deltaSeconds = delta / 1000;
     this.cloudField?.update(deltaSeconds);
@@ -1217,6 +1395,7 @@ export class GameScene extends Phaser.Scene {
       this.player.y + PLAYER.height * 0.44,
     );
     this.updateSquadFormation(deltaSeconds);
+    this.updateRangedEnemies();
     this.syncPerspective();
     // 门触发以玩家本体（小队中心）为准：跟随成员不单独触发，
     // 避免 8 人编队宽度变大后同时吃到两个门。
@@ -1362,6 +1541,13 @@ export class GameScene extends Phaser.Scene {
         follower,
         this.powerUps,
         this.onPowerUpPickup,
+        undefined,
+        this,
+      );
+      this.physics.add.overlap(
+        follower,
+        this.enemyBullets,
+        this.onPlayerHitByEnemyBullet,
         undefined,
         this,
       );
@@ -1542,6 +1728,13 @@ export class GameScene extends Phaser.Scene {
       }
     }
     const cullLimitBottom = GAME_HEIGHT + gameUnits(220);
+    // 敌方子弹：落出屏幕底部即销毁，不扣装备
+    for (const child of this.enemyBullets.getChildren()) {
+      const bullet = child as Phaser.Physics.Arcade.Sprite;
+      if (bullet.active && bullet.y > cullLimitBottom) {
+        bullet.destroy();
+      }
+    }
     for (const child of this.powerUps.getChildren()) {
       const powerUp = child as Phaser.Physics.Arcade.Sprite;
       if (powerUp.active && powerUp.y > cullLimitBottom) {
@@ -1702,6 +1895,14 @@ export class GameScene extends Phaser.Scene {
       const bullet = child as Phaser.Physics.Arcade.Sprite;
       if (bullet.active) {
         bullet.setDepth(getDepthAtY(bullet.y) + 0.6);
+      }
+    }
+
+    // 敌方子弹：只排序层级（碰撞体固定，保证判定稳定）
+    for (const child of this.enemyBullets.getChildren()) {
+      const bullet = child as Phaser.Physics.Arcade.Sprite;
+      if (bullet.active) {
+        bullet.setDepth(getDepthAtY(bullet.y) + 0.4);
       }
     }
   }

@@ -15,6 +15,7 @@ export const TEX = {
   coin: 'tex-coin',
   rewardBox: 'tex-reward-box',
   barrel: 'tex-explosive-barrel',
+  enemyBullet: 'tex-enemy-bullet',
   sun: 'tex-sun',
   vignette: 'tex-vignette',
 } as const;
@@ -167,6 +168,24 @@ export const ensureGameTextures = (scene: Phaser.Scene): void => {
     ctx.stroke();
   });
 
+  ensureCanvasTexture(scene, TEX.enemyBullet, 64, 64, (ctx) => {
+    // 敌方能量弹：外圈橙色光晕 + 红色弹体 + 白色核心
+    const glow = ctx.createRadialGradient(32, 32, 6, 32, 32, 32);
+    glow.addColorStop(0, 'rgba(255, 120, 60, 0.9)');
+    glow.addColorStop(0.6, 'rgba(239, 68, 68, 0.55)');
+    glow.addColorStop(1, 'rgba(239, 68, 68, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, 64, 64);
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(32, 32, 16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255, 235, 220, 0.95)';
+    ctx.beginPath();
+    ctx.arc(32, 32, 7, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
   ensureCanvasTexture(scene, TEX.rewardBox, 128, 128, (ctx) => {
     // 木箱：棕色箱体 + 金色包边高光 + 问号标识
     ctx.fillStyle = '#8b5a2b';
@@ -280,6 +299,8 @@ export const OPTIONAL_TEX = {
   hitSpark: 'hit_spark_sprite',
   rewardBox: 'reward_box_sprite',
   barrel: 'explosive_barrel_sprite',
+  rangedEnemy: 'enemy_ranged_sprite',
+  enemyBullet: 'enemy_bullet_sprite',
 } as const;
 
 export type OptionalTexSlot = keyof typeof OPTIONAL_TEX;
