@@ -65,10 +65,15 @@ export class GateSystem {
 
   /** 销毁全部门（场景关闭或重开时调用）。 */
   clear(): void {
-    for (const group of this.groups) {
-      for (const gate of group) {
-        this.destroyGate(gate);
+    // 场景 shutdown 时序下防御性清空，异常静默（场景销毁会兜底）
+    try {
+      for (const group of this.groups) {
+        for (const gate of group) {
+          this.destroyGate(gate);
+        }
       }
+    } catch {
+      // 静默
     }
     this.groups = [];
   }

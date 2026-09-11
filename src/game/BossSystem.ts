@@ -322,20 +322,27 @@ export class BossSystem {
 
   /** Game Over / 重开：完整清理本体、血条、timer、tween、子弹。 */
   clear(): void {
-    this.fireTimer?.remove();
-    this.fireTimer = undefined;
-    if (this.boss) {
-      this.scene.tweens.killTweensOf(this.boss);
-      this.boss.destroy();
-      this.boss = undefined;
-    }
-    if (this.bullets) {
-      for (const child of [...this.bullets.getChildren()]) {
-        (child as Phaser.Physics.Arcade.Sprite).destroy();
+    // 场景 shutdown 时序下 group 内部可能已失效：防御性清空，异常静默
+    try {
+      this.fireTimer?.remove();
+      this.fireTimer = undefined;
+      if (this.boss) {
+        this.scene.tweens.killTweensOf(this.boss);
+        this.boss.destroy();
+        this.boss = undefined;
       }
+      if (this.bullets) {
+        for (const child of [...this.bullets.getChildren()]) {
+          (child as Phaser.Physics.Arcade.Sprite).destroy();
+        }
+      }
+      this.hpBar?.destroy();
+      this.hpBar = undefined;
+    } catch {
+      // 静默：场景销毁会兜底
     }
-    this.hpBar?.destroy();
-    this.hpBar = undefined;
+    this.bossGroup = undefined;
+    this.bullets = undefined;
     this.phase = 'idle';
   }
 }

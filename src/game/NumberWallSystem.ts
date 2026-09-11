@@ -68,11 +68,17 @@ export class NumberWallSystem {
   }
 
   clear(): void {
-    if (!this.group) {
-      return;
-    }
-    for (const child of [...this.group.getChildren()]) {
-      this.destroyWall(child as Phaser.Physics.Arcade.Sprite);
+    // 场景 shutdown 时序下 group 内部可能已失效：防御性清空，异常静默
+    try {
+      if (!this.group) {
+        return;
+      }
+      for (const child of [...this.group.getChildren()]) {
+        this.destroyWall(child as Phaser.Physics.Arcade.Sprite);
+      }
+      this.group = undefined;
+    } catch {
+      this.group = undefined;
     }
   }
 
