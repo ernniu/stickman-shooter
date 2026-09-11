@@ -20,6 +20,8 @@ export const OPTIONAL_IMAGES: Record<string, string> = {
   cloud_layer_far: 'assets/image/cloud_layer_far.png',
   cloud_layer_near: 'assets/image/cloud_layer_near.png',
   hit_spark_sprite: 'assets/image/hit_spark_sprite.png',
+  reward_box_sprite: 'assets/image/reward_box_sprite.png',
+  explosive_barrel_sprite: 'assets/image/explosive_barrel_sprite.png',
 };
 
 export const IMAGE_SEQUENCES: Record<string, string> = {

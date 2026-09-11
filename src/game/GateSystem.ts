@@ -73,6 +73,11 @@ export class GateSystem {
     this.groups = [];
   }
 
+  /** 当前是否有未触发的门组在屏（供奖励目标生成避让）。 */
+  hasActiveGroup(): boolean {
+    return this.groups.length > 0;
+  }
+
   /** 波次开始时按需生成一组门（波次规则已与道具错开）。 */
   onWaveStart(wave: number): void {
     if (wave < GATE.startWave) {

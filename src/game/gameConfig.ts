@@ -243,6 +243,36 @@ export const GROWTH = {
   minFireIntervalMs: 100,
 } as const;
 
+/** 奖励箱：可被射击打破的可选目标，未打破越线直接消失。 */
+export const REWARD_BOX = {
+  hp: 5,
+  size: gameUnits(200),
+  bodyRatio: 0.8,
+  speed: gameUnits(460),
+  startWave: 3,
+  everyWaves: 2,
+  spawnChance: 0.6,
+  maxOnScreen: 1,
+  coinReward: 20,
+} as const;
+
+/** 爆炸桶：低血量可打爆，对范围内敌人造成范围伤害。 */
+export const BARREL = {
+  hp: 2,
+  size: gameUnits(180),
+  bodyRatio: 0.75,
+  speed: gameUnits(520),
+  startWave: 4,
+  everyWaves: 2,
+  spawnChance: 0.65,
+  spawnMin: 1,
+  spawnMax: 2,
+  maxOnScreen: 2,
+  /** 爆炸范围伤害（固定值，走敌人受击结算）。 */
+  blastDamage: 3,
+  blastRadius: gameUnits(560),
+} as const;
+
 /** 跑道增益门（选择门）配置：尺寸、节奏、奖励全部集中在此。 */
 export const GATE = {
   // 生成节奏：从 startWave 开始，每 everyWaves 波一组，且两组间隔不小于 minIntervalMs

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 
 import {
   BULLET,
+  BARREL,
   DANGER_LINE_Y,
   ENEMY,
   EQUIPMENT,
@@ -9,6 +10,7 @@ import {
   GATE,
   GROWTH,
   PLAYER,
+  REWARD_BOX,
   PLAYER_Y,
   POWER_UP,
   RAGE,
@@ -60,6 +62,8 @@ export class GameScene extends Phaser.Scene {
   private bullets!: Phaser.Physics.Arcade.Group;
   private enemies!: Phaser.Physics.Arcade.Group;
   private powerUps!: Phaser.Physics.Arcade.Group;
+  private rewardBoxes!: Phaser.Physics.Arcade.Group;
+  private barrels!: Phaser.Physics.Arcade.Group;
   private banner!: Phaser.GameObjects.Text;
   private playerShadow?: Phaser.GameObjects.Ellipse;
   private cloudField?: CloudField;
@@ -300,11 +304,27 @@ export class GameScene extends Phaser.Scene {
     this.bullets = this.physics.add.group();
     this.enemies = this.physics.add.group();
     this.powerUps = this.physics.add.group();
+    this.rewardBoxes = this.physics.add.group();
+    this.barrels = this.physics.add.group();
 
     this.physics.add.overlap(
       this.bullets,
       this.enemies,
       this.onBulletHitEnemy,
+      undefined,
+      this,
+    );
+    this.physics.add.overlap(
+      this.bullets,
+      this.rewardBoxes,
+      this.onBulletHitRewardBox,
+      undefined,
+      this,
+    );
+    this.physics.add.overlap(
+      this.bullets,
+      this.barrels,
+      this.onBulletHitBarrel,
       undefined,
       this,
     );
@@ -421,6 +441,115 @@ export class GameScene extends Phaser.Scene {
 
     // 增益门：生成波次（奇数波）已与道具（偶数波）错开
     this.gates.onWaveStart(wave);
+
+    // 奖励目标：概率生成，且避开屏上的门组
+    this.spawnRewardTargets(wave);
+  }
+
+  /** 奖励箱 / 爆炸桶的按波概率生成（频率、上限见 REWARD_BOX / BARREL 配置）。 */
+  private spawnRewardTargets(wave: number): void {
+    // 门组活动时不生成，避免与门重叠
+    if (this.gates.hasActiveGroup()) {
+      return;
+    }
+
+    if (
+      wave >= REWARD_BOX.startWave &&
+      (wave - REWARD_BOX.startWave) % REWARD_BOX.everyWaves === 0 &&
+      Math.random() < REWARD_BOX.spawnChance &&
+      this.rewardBoxes.countActive(true) < REWARD_BOX.maxOnScreen
+    ) {
+      this.spawnRewardBox();
+    }
+
+    if (
+      wave >= BARREL.startWave &&
+      (wave - BARREL.startWave) % BARREL.everyWaves === 0 &&
+      Math.random() < BARREL.spawnChance &&
+      this.barrels.countActive(true) < BARREL.maxOnScreen
+    ) {
+      const count = Math.min(
+        BARREL.maxOnScreen - this.barrels.countActive(true),
+        Phaser.Math.Between(BARREL.spawnMin, BARREL.spawnMax),
+      );
+      for (let index = 0; index < count; index += 1) {
+        this.spawnBarrel();
+      }
+    }
+  }
+
+  /** 生成透视跑道内的目标 x 坐标（顶部外侧生成，随跑道下移）。 */
+  private spawnTargetX(spawnY: number): number {
+    const bounds = getLaneBoundsAtY(spawnY);
+    const edge = REWARD_BOX.size * 0.5;
+    return Phaser.Math.Clamp(
+      GAME_CENTER_X +
+        Phaser.Math.FloatBetween(-0.6, 0.6) * getLaneHalfWidthAtY(spawnY),
+      bounds.left + edge,
+      bounds.right - edge,
+    );
+  }
+
+  private spawnRewardBox(): void {
+    const spawnY = -REWARD_BOX.size;
+    const x = this.spawnTargetX(spawnY);
+    const texture = resolveTexture(this, 'rewardBox', TEX.rewardBox);
+    const box = this.rewardBoxes.create(x, spawnY, texture) as
+      Phaser.Physics.Arcade.Sprite;
+    box
+      .setDisplaySize(REWARD_BOX.size, REWARD_BOX.size)
+      .setDepth(getDepthAtY(spawnY));
+    box.setData('baseScale', box.scaleX);
+    box.setData('hp', REWARD_BOX.hp);
+    this.setBodySize(box, REWARD_BOX.size * REWARD_BOX.bodyRatio, REWARD_BOX.size * REWARD_BOX.bodyRatio);
+    box.setVelocityY(REWARD_BOX.speed);
+    const shadow = this.createShadow(
+      REWARD_BOX.size * 0.9,
+      getDepthAtY(spawnY) - 0.05,
+    );
+    shadow.setPosition(x, spawnY + REWARD_BOX.size * 0.42);
+    box.setData('shadow', shadow);
+  }
+
+  private spawnBarrel(): void {
+    const spawnY = -BARREL.size;
+    // 优先贴着现存敌人落点，形成"打桶清场"的机会
+    const activeEnemies = this.enemies
+      .getChildren()
+      .filter(
+        (child) =>
+          (child as Phaser.Physics.Arcade.Sprite).active &&
+          (child as Phaser.Physics.Arcade.Sprite).y > 0 &&
+          (child as Phaser.Physics.Arcade.Sprite).y < DANGER_LINE_Y,
+      ) as Phaser.Physics.Arcade.Sprite[];
+    let x: number;
+    if (activeEnemies.length > 0) {
+      const reference =
+        activeEnemies[Phaser.Math.Between(0, activeEnemies.length - 1)];
+      x = reference.x + Phaser.Math.Between(-gameUnits(120), gameUnits(120));
+    } else {
+      x = this.spawnTargetX(spawnY);
+    }
+    const bounds = getLaneBoundsAtY(spawnY);
+    const edge = BARREL.size * 0.5;
+    x = Phaser.Math.Clamp(x, bounds.left + edge, bounds.right - edge);
+
+    const texture = resolveTexture(this, 'barrel', TEX.barrel);
+    const barrel = this.barrels.create(x, spawnY, texture) as
+      Phaser.Physics.Arcade.Sprite;
+    barrel
+      .setDisplaySize(BARREL.size, BARREL.size)
+      .setDepth(getDepthAtY(spawnY));
+    barrel.setData('baseScale', barrel.scaleX);
+    barrel.setData('hp', BARREL.hp);
+    this.setBodySize(barrel, BARREL.size * BARREL.bodyRatio, BARREL.size * BARREL.bodyRatio);
+    barrel.setVelocityY(BARREL.speed);
+    const shadow = this.createShadow(
+      BARREL.size * 0.9,
+      getDepthAtY(spawnY) - 0.05,
+    );
+    shadow.setPosition(x, spawnY + BARREL.size * 0.42);
+    barrel.setData('shadow', shadow);
   }
 
   private spawnEnemy(): void {
@@ -562,7 +691,9 @@ export class GameScene extends Phaser.Scene {
    * 血量内部为浮点，头顶数字向上取整显示。
    */
   private currentBulletDamage(): number {
-    return GROWTH.baseBulletDamage + this.damageBonus;
+    // 乘区公式：base × (1 + 加成)。加成小数累计（+30% = 0.3，上限 1.5），
+    // 基础伤害为 1 时与加法形式等价；基础伤害调整后不会复利。
+    return GROWTH.baseBulletDamage * (1 + this.damageBonus);
   }
 
   /**
@@ -688,9 +819,132 @@ export class GameScene extends Phaser.Scene {
     this.hitEnemy(enemy);
   }
 
-  /** 受击：扣 1 点血。非致命只闪白继续下落；致命则停顿、放大后爆炸销毁。 */
-  private hitEnemy(enemy: Phaser.Physics.Arcade.Sprite): void {
-    const hp = (enemy.getData('hp') as number) - this.currentBulletDamage();
+  /**
+   * 子弹命中奖励箱：同帧防重复（子弹销毁后 active=false，后续回调自动跳过）。
+   * 血量归零 → 开箱结算；未破只闪白。
+   */
+  private onBulletHitRewardBox(
+    bulletObject: unknown,
+    boxObject: unknown,
+  ): void {
+    if (this.state !== 'playing') {
+      return;
+    }
+    const bullet = bulletObject as Phaser.Physics.Arcade.Sprite;
+    const box = boxObject as Phaser.Physics.Arcade.Sprite;
+    if (!bullet.active || !box.active) {
+      return;
+    }
+    bullet.destroy();
+    const hp = (box.getData('hp') as number) - this.currentBulletDamage();
+    box.setData('hp', hp);
+    if (hp > 0) {
+      box.setTintFill(0xffffff);
+      this.time.delayedCall(Math.round(FEEDBACK.hitFlashMs * 0.75), () => {
+        if (box.active) {
+          box.clearTint();
+        }
+      });
+      return;
+    }
+    this.openRewardBox(box);
+  }
+
+  /** 子弹命中爆炸桶：血量归零 → 范围伤害 + 自毁（exploded 标记防重复触发）。 */
+  private onBulletHitBarrel(bulletObject: unknown, barrelObject: unknown): void {
+    if (this.state !== 'playing') {
+      return;
+    }
+    const bullet = bulletObject as Phaser.Physics.Arcade.Sprite;
+    const barrel = barrelObject as Phaser.Physics.Arcade.Sprite;
+    if (!bullet.active || !barrel.active) {
+      return;
+    }
+    bullet.destroy();
+    const hp = (barrel.getData('hp') as number) - this.currentBulletDamage();
+    barrel.setData('hp', hp);
+    if (hp > 0) {
+      barrel.setTintFill(0xffffff);
+      this.time.delayedCall(Math.round(FEEDBACK.hitFlashMs * 0.75), () => {
+        if (barrel.active) {
+          barrel.clearTint();
+        }
+      });
+      return;
+    }
+    this.explodeBarrel(barrel);
+  }
+
+  /** 开奖励箱：装备+1（未满）→ 护盾+1（无盾）→ 金币；满装备沿用狂暴+金币规则。 */
+  private openRewardBox(box: Phaser.Physics.Arcade.Sprite): void {
+    const x = box.x;
+    const y = box.y;
+    this.destroyTargetWithShadow(box);
+    this.fx.deathBurst(x, y);
+
+    if (this.weaponLevel < POWER_UP.maxWeaponLevel) {
+      this.weaponLevel += 1;
+      this.syncSquad();
+      this.updateHud();
+      floatText(this, x, y, '装备 +1！', '#38bdf8', { pop: true });
+      return;
+    }
+    if (this.shieldCount < EQUIPMENT.shieldMax) {
+      this.applyShield();
+      return;
+    }
+    // 装备与护盾均已满：转为金币奖励
+    this.coins += REWARD_BOX.coinReward;
+    this.hud.setCoins(this.coins, true);
+    this.spawnCoins(
+      x,
+      y,
+      2,
+      REWARD_BOX.coinReward / 2,
+    );
+    floatText(
+      this,
+      x,
+      y,
+      `金币 +${REWARD_BOX.coinReward}！`,
+      '#facc15',
+      { pop: true },
+    );
+  }
+
+  /** 引爆炸弹桶：范围伤害走 hitEnemy 现有结算；桶自身立即销毁防重复。 */
+  private explodeBarrel(barrel: Phaser.Physics.Arcade.Sprite): void {
+    const x = barrel.x;
+    const y = barrel.y;
+    this.destroyTargetWithShadow(barrel);
+    this.fx.barrelBlast(x, y);
+
+    for (const child of [...this.enemies.getChildren()]) {
+      const enemy = child as Phaser.Physics.Arcade.Sprite;
+      if (!enemy.active || enemy.getData('dying')) {
+        continue;
+      }
+      const distance = Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y);
+      if (distance <= BARREL.blastRadius) {
+        this.hitEnemy(enemy, BARREL.blastDamage);
+      }
+    }
+  }
+
+  /** 销毁奖励目标并连带清理影子。 */
+  private destroyTargetWithShadow(target: Phaser.Physics.Arcade.Sprite): void {
+    const shadow = target.getData('shadow') as
+      | Phaser.GameObjects.Ellipse
+      | undefined;
+    this.tweens.killTweensOf(target);
+    target.destroy();
+    shadow?.destroy();
+  }
+  private hitEnemy(
+    enemy: Phaser.Physics.Arcade.Sprite,
+    damage: number = this.currentBulletDamage(),
+  ): void {
+    const hp = (enemy.getData('hp') as number) - damage;
     enemy.setData('hp', hp);
     const hpText = enemy.getData('hpText') as
       | Phaser.GameObjects.Text
@@ -1278,6 +1532,15 @@ export class GameScene extends Phaser.Scene {
         bullet.destroy();
       }
     }
+    // 奖励箱 / 爆炸桶越过危险线：直接销毁，不给奖励、不扣装备
+    for (const group of [this.rewardBoxes, this.barrels]) {
+      for (const child of group.getChildren()) {
+        const target = child as Phaser.Physics.Arcade.Sprite;
+        if (target.active && target.y > DANGER_LINE_Y) {
+          this.destroyTargetWithShadow(target);
+        }
+      }
+    }
     const cullLimitBottom = GAME_HEIGHT + gameUnits(220);
     for (const child of this.powerUps.getChildren()) {
       const powerUp = child as Phaser.Physics.Arcade.Sprite;
@@ -1409,6 +1672,31 @@ export class GameScene extends Phaser.Scene {
       powerUp.setDepth(getDepthAtY(powerUp.y));
     }
 
+    // 奖励箱 / 爆炸桶：缩放 + 层级 + 影子（碰撞体由 setBodySize 按最终 scale 反算，判定不漂移）
+    for (const group of [this.rewardBoxes, this.barrels]) {
+      for (const child of group.getChildren()) {
+        const target = child as Phaser.Physics.Arcade.Sprite;
+        if (!target.active) {
+          continue;
+        }
+        const targetBaseScale = (target.getData('baseScale') as number) ?? 1;
+        const targetScale = getPerspectiveScaleAtY(target.y);
+        target.setScale(targetBaseScale * targetScale);
+        target.setDepth(getDepthAtY(target.y));
+        const targetShadow = target.getData('shadow') as
+          | Phaser.GameObjects.Ellipse
+          | undefined;
+        if (targetShadow?.active) {
+          targetShadow.setPosition(
+            target.x,
+            target.y + target.displayHeight * 0.46,
+          );
+          targetShadow.setScale(targetScale);
+          targetShadow.setDepth(getDepthAtY(target.y) - 0.05);
+        }
+      }
+    }
+
     // 子弹：只排序层级，不改缩放（保持命中判定与观感稳定）
     for (const child of this.bullets.getChildren()) {
       const bullet = child as Phaser.Physics.Arcade.Sprite;
@@ -1437,9 +1725,16 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  /** 击杀掉落金币：弹出后飞向右上角金币 HUD，入账时数字弹一下。 */
-  private spawnCoins(x: number, y: number): void {
-    const count = Phaser.Math.Between(ENEMY.coinDropMin, ENEMY.coinDropMax);
+  /**
+   * 金币飞向 HUD：默认敌人掉落（数量随机、每枚 +1）。
+   * 奖励箱等大额奖励可指定数量与每枚面值。
+   */
+  private spawnCoins(
+    x: number,
+    y: number,
+    count: number = Phaser.Math.Between(ENEMY.coinDropMin, ENEMY.coinDropMax),
+    valuePerCoin = 1,
+  ): void {
     const coinTexture = resolveTexture(this, 'coin', TEX.coin);
     const displaySize = ENEMY.coinSize * getPerspectiveScaleAtY(y);
     for (let index = 0; index < count; index += 1) {
@@ -1467,7 +1762,7 @@ export class GameScene extends Phaser.Scene {
             ease: 'Cubic.in',
             onComplete: () => {
               coin.destroy();
-              this.coins += 1;
+              this.coins += valuePerCoin;
               this.hud.setCoins(this.coins, true);
             },
           });

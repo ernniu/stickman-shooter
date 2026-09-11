@@ -13,6 +13,8 @@ export const TEX = {
   powerUp: 'tex-powerup',
   sky: 'tex-sky',
   coin: 'tex-coin',
+  rewardBox: 'tex-reward-box',
+  barrel: 'tex-explosive-barrel',
   sun: 'tex-sun',
   vignette: 'tex-vignette',
 } as const;
@@ -165,6 +167,57 @@ export const ensureGameTextures = (scene: Phaser.Scene): void => {
     ctx.stroke();
   });
 
+  ensureCanvasTexture(scene, TEX.rewardBox, 128, 128, (ctx) => {
+    // 木箱：棕色箱体 + 金色包边高光 + 问号标识
+    ctx.fillStyle = '#8b5a2b';
+    ctx.fillRect(14, 22, 100, 92);
+    ctx.strokeStyle = '#d4a017';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(14, 22, 100, 92);
+    ctx.strokeStyle = '#a0672f';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(14, 22);
+    ctx.lineTo(114, 114);
+    ctx.moveTo(114, 22);
+    ctx.lineTo(14, 114);
+    ctx.stroke();
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 56px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('?', 64, 70);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.fillRect(20, 26, 40, 10);
+  });
+
+  ensureCanvasTexture(scene, TEX.barrel, 128, 128, (ctx) => {
+    // 爆炸桶：红橙桶身 + 黄黑危险条纹 + 感叹号
+    ctx.fillStyle = '#c2410c';
+    ctx.fillRect(28, 20, 72, 92);
+    ctx.fillStyle = '#7c2d12';
+    ctx.fillRect(24, 14, 80, 14);
+    ctx.fillRect(24, 104, 80, 14);
+    ctx.fillStyle = '#facc15';
+    for (let index = 0; index < 3; index += 1) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(28, 40 + index * 22, 72, 12);
+      ctx.clip();
+      ctx.translate(28 + index * 12, 0);
+      ctx.fillRect(0, 40 + index * 22, 12, 12);
+      ctx.fillRect(24, 40 + index * 22, 12, 12);
+      ctx.fillRect(48, 40 + index * 22, 12, 12);
+      ctx.fillRect(72, 40 + index * 22, 12, 12);
+      ctx.restore();
+    }
+    ctx.fillStyle = '#fff7ed';
+    ctx.font = 'bold 44px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('!', 64, 88);
+  });
+
   ensureCanvasTexture(scene, TEX.coin, COIN_TEXTURE_SIZE, COIN_TEXTURE_SIZE, (ctx) => {
     ctx.fillStyle = '#b45309';
     ctx.beginPath();
@@ -225,6 +278,8 @@ export const OPTIONAL_TEX = {
   cloudFar: 'cloud_layer_far',
   cloudNear: 'cloud_layer_near',
   hitSpark: 'hit_spark_sprite',
+  rewardBox: 'reward_box_sprite',
+  barrel: 'explosive_barrel_sprite',
 } as const;
 
 export type OptionalTexSlot = keyof typeof OPTIONAL_TEX;

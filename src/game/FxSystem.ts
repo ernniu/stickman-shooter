@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 
 import { GAME_HEIGHT, gameUnits } from '@/rendering';
 
-import { FEEDBACK, KILL_STAIN } from './gameConfig';
+import { BARREL, FEEDBACK, KILL_STAIN } from './gameConfig';
 import { getDepthAtY, getPerspectiveScaleAtY } from './perspective';
 
 /**
@@ -54,6 +54,52 @@ export class FxSystem {
         y: y + Math.sin(angle) * distance,
         alpha: 0,
         duration: FEEDBACK.explosionDurationMs * (0.8 + Math.random() * 0.4),
+        ease: 'Cubic.out',
+        onComplete: () => shard.destroy(),
+      });
+    }
+  }
+
+  /** 爆炸桶爆轰：复用死亡爆炸结构，半径更大、颜色偏橙黄。 */
+  barrelBlast(x: number, y: number): void {
+    const flash = this.scene.add
+      .circle(x, y, gameUnits(70), 0xfff3c4, 0.95)
+      .setDepth(8.5);
+    this.scene.tweens.add({
+      targets: flash,
+      scale: 2,
+      alpha: 0,
+      duration: FEEDBACK.explosionDurationMs * 0.7,
+      ease: 'Quad.out',
+      onComplete: () => flash.destroy(),
+    });
+
+    const ring = this.scene.add
+      .circle(x, y, gameUnits(50), 0xfbbf24, 0.9)
+      .setDepth(8.5);
+    this.scene.tweens.add({
+      targets: ring,
+      scale: (BARREL.blastRadius / gameUnits(50)) * 0.9,
+      alpha: 0,
+      duration: FEEDBACK.explosionDurationMs * 1.3,
+      ease: 'Cubic.out',
+      onComplete: () => ring.destroy(),
+    });
+
+    for (let index = 0; index < FEEDBACK.explosionShards + 4; index += 1) {
+      const angle =
+        (Math.PI * 2 * index) / (FEEDBACK.explosionShards + 4) +
+        Math.random() * 0.6;
+      const distance = BARREL.blastRadius * (0.5 + Math.random() * 0.55);
+      const shard = this.scene.add
+        .circle(x, y, gameUnits(10 + Math.random() * 10), 0xf97316, 0.95)
+        .setDepth(8.5);
+      this.scene.tweens.add({
+        targets: shard,
+        x: x + Math.cos(angle) * distance,
+        y: y + Math.sin(angle) * distance,
+        alpha: 0,
+        duration: FEEDBACK.explosionDurationMs * (0.9 + Math.random() * 0.4),
         ease: 'Cubic.out',
         onComplete: () => shard.destroy(),
       });
