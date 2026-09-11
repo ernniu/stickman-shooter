@@ -27,7 +27,9 @@
       );
       // 调试浮层：运行时报错直接显示在画面顶部（便于真机排查，不影响正常流程）
       window.addEventListener('error', (event) => {
-        showRuntimeError(event.message);
+        showRuntimeError(
+          (event.error && event.error.stack) || event.message,
+        );
       });
       window.addEventListener('unhandledrejection', (event) => {
         showRuntimeError(String(event.reason));
@@ -44,7 +46,7 @@
             'white-space:pre-wrap;word-break:break-all;';
           document.body.appendChild(box);
         }
-        box.textContent += message + '\n';
+        box.textContent += message + '\n\n';
       }
     </script>
     <script type="module" src="/src/main.ts"></script>
